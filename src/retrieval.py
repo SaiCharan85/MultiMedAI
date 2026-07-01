@@ -147,6 +147,60 @@ def prepare_radiology(cfg):
           f"({start} pathology + {len(imgs)} radiology)")
 
 
+def prepare_chestxray(cfg):
+    """Append a SMALL streamed subset of chest-disease X-rays (TB, COVID,
+    Pneumonia) with clear captions. Streaming avoids the 7.7GB full download."""
+    from datasets import load_dataset
+
+    rcfg = cfg["retrieval"]
+    bank_dir, emb_file, meta_file = _bank_paths(cfg)
+    model, preprocess, tokenizer, device = load_biomedclip(rcfg["clip_model"])
+    if not emb_file.exists():
+        raise FileNotFoundError("Build the pathology bank first (prepare).")
+    bank, metas = load_bank(cfg)
+    keep = [i for i, m in enumerate(metas) if m.get("source") != "tb"]
+    bank = bank[keep]; metas = [metas[i] for i in keep]
+    start = len(metas)
+
+    # label index -> caption phrase (from dataset ClassLabel names)
+    want = {3: "pulmonary tuberculosis", 0: "COVID-19 pneumonia", 2: "pneumonia"}
+    per = rcfg["chest_per_class"]
+    thumb = rcfg["thumb_size"]
+    counts = {k: 0 for k in want}
+    print(f"[chest] Streaming up to {per} each of TB/COVID/Pneumonia...")
+    ds = load_dataset(rcfg["chest_dataset"], split="train", streaming=True)
+    imgs, new_metas = [], []
+    for ex in ds:
+        lab = ex["label"]
+        if lab not in want or counts[lab] >= per:
+            continue
+        counts[lab] += 1
+        idx = start + len(imgs)
+        rel = f"tb_{idx:05d}.jpg"
+        t = ex["image"].convert("RGB").resize((thumb, thumb))
+        t.save(bank_dir / rel, quality=85)
+        imgs.append(t)
+        new_metas.append({"file": rel, "question": f"chest X-ray, {want[lab]}",
+                          "answer": want[lab], "source": "tb"})
+        if all(counts[k] >= per for k in want):
+            break
+    print(f"[chest] Collected {counts}")
+
+    print(f"[chest] Embedding {len(imgs)} chest X-rays (CPU)...")
+    embs, B = [], 32
+    for i in range(0, len(imgs), B):
+        embs.append(encode_images(model, preprocess, device, imgs[i:i + B]))
+        print(f"  {min(i+B, len(imgs))}/{len(imgs)}", end="\r")
+    print()
+    new = torch.cat(embs).numpy().astype("float32")
+    combined = np.concatenate([bank.numpy().astype("float32"), new], axis=0)
+    metas = metas + new_metas
+    np.savez_compressed(emb_file, embeddings=combined)
+    with open(meta_file, "w", encoding="utf-8") as f:
+        json.dump(metas, f)
+    print(f"[chest] Bank now {combined.shape[0]} images (+{len(imgs)} chest X-rays)")
+
+
 def load_bank(cfg):
     """Load saved bank embeddings + metadata for querying."""
     _, emb_file, meta_file = _bank_paths(cfg)
@@ -328,6 +382,9 @@ def main():
         return
     if arg == "radiology":
         prepare_radiology(cfg)
+        return
+    if arg == "chest":
+        prepare_chestxray(cfg)
         return
     if arg.startswith("query:"):
         for meta, score in query(cfg, arg[len("query:"):], topk=5):

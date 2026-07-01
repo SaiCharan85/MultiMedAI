@@ -65,6 +65,9 @@ retrieval:
   # captions, appended to the pathology bank so chest/brain queries have hits.
   radiology_dataset: eltorio/ROCOv2-radiology
   radiology_subset: 3000
+  # Chest-disease X-rays (streamed subset -> small storage). TB + COVID + Pneumonia.
+  chest_dataset: DevVoyageR007/classify_Pneumonia_Tuberculosis_and_Normal__Non_Xray_chest_Xray_images
+  chest_per_class: 400
 
 vqa:
   # same pathology-specialized encoder as retrieval (see note above)

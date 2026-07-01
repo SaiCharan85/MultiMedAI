@@ -117,6 +117,23 @@ def _vqa():
 
 
 # ============================ capability handlers ==========================
+# --- provenance: which open dataset each bank image came from (traceable) ---
+SOURCE_INFO = {
+    "radiology": ("ROCOv2 Radiology (open)",
+                  "https://huggingface.co/datasets/eltorio/ROCOv2-radiology"),
+    "pathology": ("PathVQA (open)",
+                  "https://huggingface.co/datasets/flaviagiammarino/path-vqa"),
+    "tb": ("TB Chest X-ray (open)",
+           "https://huggingface.co/datasets/DevVoyageR007/classify_Pneumonia_Tuberculosis_and_Normal__Non_Xray_chest_Xray_images"),
+}
+
+
+def provenance(meta):
+    """Return (source_name, source_url) for a bank image — real, citable origin."""
+    src = meta.get("source", "pathology")
+    return SOURCE_INFO.get(src, SOURCE_INFO["pathology"])
+
+
 def do_retrieve(query, topk):
     import torch
     from src.biomedclip import encode_texts
@@ -128,7 +145,8 @@ def do_retrieve(query, topk):
     sims = (q @ bank.T).squeeze(0)
     vals, idx = sims.topk(min(topk, len(metas)))
     bank_dir = resolve(cfg["paths"]["data"], "image_bank")
-    return [(bank_dir / metas[i]["file"], metas[i]["question"], float(vals[k]))
+    # return the FULL meta so the UI can show caption + source provenance
+    return [(bank_dir / metas[i]["file"], metas[i], float(vals[k]))
             for k, i in enumerate(idx.tolist())]
 
 
@@ -147,6 +165,32 @@ def do_vqa(pil_img, question):
 def do_report(pil_img):
     from src.report import caption_image
     return caption_image(cfg, pil_img)
+
+
+# candidate modalities for the zero-shot "what is this / is it a brain scan?" check
+MODALITIES = [
+    "a brain MRI or CT scan",
+    "a chest X-ray radiograph",
+    "an abdominal or pelvic CT scan",
+    "a histopathology microscope slide (H&E stained tissue)",
+    "a retinal fundus photograph",
+    "a bone or limb X-ray",
+    "an ultrasound image",
+]
+
+
+def do_modality_check(pil_img):
+    """Zero-shot: what kind of medical image is this? (BiomedCLIP image-vs-text).
+    Lets the app say e.g. 'this looks like a chest X-ray, NOT a brain scan.'"""
+    import torch
+    from src.biomedclip import encode_images, encode_texts
+    model, preprocess, tokenizer, device = _clip()
+    ie = encode_images(model, preprocess, device, [pil_img])
+    te = encode_texts(model, tokenizer, device, MODALITIES)
+    sims = (ie @ te.T)[0]
+    probs = sims.softmax(0)
+    k = int(probs.argmax())
+    return MODALITIES[k], float(probs[k])
 
 
 def do_generate(prompt):
@@ -171,9 +215,24 @@ with st.sidebar:
     st.caption(f"Device: **{DEVICE.upper()}** · open models + PathVQA")
 
     up = st.file_uploader("Upload an image (for VQA / report)", type=["png", "jpg", "jpeg"])
-    user_img = Image.open(up).convert("RGB") if up else None
+    uploaded_img = Image.open(up).convert("RGB") if up else None
+
+    # --- grab an image from the last retrieved results as the active image ---
+    picked_img = None
+    last = st.session_state.get("last_results", [])
+    if last:
+        st.markdown("**Or analyze a result image:**")
+        labels = [f"#{i+1} · {m.get('question','')[:28]}" for i, (_, m, _) in enumerate(last)]
+        choice = st.selectbox("Pick from last results", ["(none)"] + labels, index=0)
+        if choice != "(none)":
+            sel = last[labels.index(choice)]
+            from PIL import Image as _I
+            picked_img = _I.open(str(sel[0])).convert("RGB")
+
+    # active image = uploaded (priority) else the picked result
+    user_img = uploaded_img or picked_img
     if user_img:
-        st.image(user_img, caption="Active image", use_column_width=True)
+        st.image(user_img, caption="Active image (ask about it)", use_column_width=True)
 
     topk = st.slider("Images to retrieve", 3, 15, 9)
     allow_gen = st.toggle("Allow image generation (slow, ~50s)", value=False)
@@ -245,68 +304,66 @@ if prompt:
                         f"for *“{prompt}”* (similarity ≥ {min_score:.2f}):")
                 st.markdown(text)
                 cols = st.columns(3)
-                for i, (path, ctx, score) in enumerate(confident):
-                    cap = f"{score:.2f} · {ctx[:40]}"
+                for i, (path, meta, score) in enumerate(confident):
+                    ctx = meta.get("question", "")
+                    src_name, src_url = provenance(meta)
                     with cols[i % 3]:
                         st.image(Image.open(str(path)).convert("RGB"),
-                                 caption=cap, use_column_width=True)
-                    imgs_payload.append((str(path), cap))
-                st.caption("REAL images retrieved from PathVQA — not generated, "
-                           "no hallucination. Score = cosine similarity (confidence).")
+                                 use_column_width=True)
+                        st.markdown(
+                            f"**{score:.2f}** · {ctx[:70]}<br>"
+                            f"<small>📖 Source: <a href='{src_url}'>{src_name}</a></small>",
+                            unsafe_allow_html=True)
+                    imgs_payload.append((str(path), f"{score:.2f} · {ctx[:40]}"))
+                # remember results so the user can grab one to analyze (sidebar)
+                st.session_state["last_results"] = confident
+                st.caption("REAL images from open datasets — not generated. Score = "
+                           "similarity. To analyze one, pick it in the sidebar "
+                           "(“analyze a result image”) and ask, e.g. *“what is this?”*")
 
         elif intent == "ask":
-            # a general QUESTION (no uploaded image) -> concise TEXT answer,
-            # plus a few illustrative REAL images if the bank has confident ones.
+            # TEXT-ONLY answer (no images unless the user used display keywords).
             with st.spinner("Answering…"):
                 try:
                     answer = llm.answer_question(cfg, prompt)
                 except Exception:
                     answer = "(LLM unavailable — try again in a moment.)"
-                hits = do_retrieve(prompt, 3)
-                illustrative = [h for h in hits if h[2] >= min_score]
             st.markdown(f"**Answer:** {answer}")
-            if illustrative:
-                st.caption("Related real images from the bank:")
-                cols = st.columns(3)
-                for i, (path, ctx, score) in enumerate(illustrative):
-                    cap = f"{score:.2f} · {ctx[:32]}"
-                    with cols[i % 3]:
-                        st.image(Image.open(str(path)).convert("RGB"),
-                                 caption=cap, use_column_width=True)
-                    imgs_payload.append((str(path), cap))
-            st.caption("General explanation by the LLM (Qwen2.5) — educational, "
-                       "not a diagnosis. Images (if any) are real, retrieved.")
+            st.caption("Educational explanation by the LLM (Qwen2.5) — not a "
+                       "diagnosis. Add words like *show / images / scans* to see images.")
             text = answer
 
-        elif intent == "vqa":
-            if not engine.vqa_available(cfg):
-                text = ("No trained VQA head found yet. Train it with "
-                        "`python -m src.vqa all`, then re-ask.")
-                st.markdown(text)
-            else:
-                with st.spinner("Analyzing image + question…"):
-                    ans = do_vqa(user_img, prompt)
-                    cap = do_report(user_img)
-                    try:
-                        natural = llm.compose_answer(cfg, prompt, ans[0][0], cap)
-                    except Exception:
-                        natural = ans[0][0]
-                text = (f"**Answer:** {natural}\n\n"
-                        f"_Model prediction:_ **{ans[0][0]}** ({ans[0][1]:.0%}); others: "
-                        + ", ".join(f"{a} ({p:.0%})" for a, p in ans[1:])
-                        + f"\n\n_Visual description:_ {cap}")
-                st.markdown(text)
-
-        elif intent == "report":
-            with st.spinner("Writing a report…"):
+        elif intent in ("vqa", "report"):
+            # analyze the ACTIVE image (uploaded OR grabbed from results)
+            with st.spinner("Analyzing the image…"):
+                modality, mconf = do_modality_check(user_img)
                 cap = do_report(user_img)
+                vqa_line = ""
+                if intent == "vqa" and engine.vqa_available(cfg):
+                    ans = do_vqa(user_img, prompt)
+                    vqa_line = ("_VQA head:_ **" + ans[0][0] + f"** ({ans[0][1]:.0%}); "
+                                + ", ".join(f"{a} ({p:.0%})" for a, p in ans[1:]))
+                # LLM grounds its explanation on modality + caption (+ VQA if any)
                 try:
-                    report = llm.compose_report(cfg, cap)
+                    obs = f"Detected image type: {modality} (confidence {mconf:.0%}). {cap}"
+                    if vqa_line:
+                        obs += f" VQA prediction: {ans[0][0]}."
+                    if intent == "report":
+                        body = llm.compose_report(cfg, obs)
+                    else:
+                        body = llm.compose_answer(cfg, prompt, obs, cap)
                 except Exception:
-                    report = cap
-            text = (f"**Report:** {report}\n\n"
-                    f"_Grounded on visual description:_ {cap}\n\n"
-                    "_LLM (Qwen2.5) rephrases grounded observations only; not a diagnosis._")
+                    body = cap
+            text = (f"**{body}**\n\n"
+                    f"🔬 _Detected image type:_ **{modality}** ({mconf:.0%} confidence)\n\n"
+                    f"_Visual description:_ {cap}"
+                    + (f"\n\n{vqa_line}" if vqa_line else ""))
+            # honest modality-mismatch flag (e.g. asked about brain, image is chest)
+            pl = prompt.lower()
+            if "brain" in pl and "brain" not in modality.lower():
+                text += ("\n\n⚠️ **Note:** you mentioned *brain*, but this image looks "
+                         f"like **{modality}** — it may **not** be a brain scan.")
+            text += "\n\n_Educational analysis, not a diagnosis._"
             st.markdown(text)
 
         elif intent == "generate":

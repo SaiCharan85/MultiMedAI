@@ -27,24 +27,22 @@ def detect_intent(message: str, has_image: bool) -> str:
                             "create an image", "make an image", "draw")):
         return "generate"
 
-    # 2) EXPLICIT request to see ONLY images -> pure gallery
-    show_triggers = ("show me", "show images", "show me images", "find images",
-                     "images of", "image of", "pictures of", "picture of",
-                     "see examples", "display images", "just images", "only images",
-                     "give me images", "give me pictures")
-    if any(t in m for t in show_triggers):
-        return "retrieve"
-
-    # 3) an uploaded image present -> answer about THAT image (text)
+    # 2) an ACTIVE image (uploaded OR grabbed from results) + text -> analyze it
     report_words = ("describe", "caption", "report", "findings", "summary")
     if has_image:
         if any(w in m for w in report_words):
             return "report"
-        return "vqa"
+        return "vqa"          # "explain this", "is it a tumor?", "what diagnosis?"
 
-    # 4) DEFAULT = text-first, multimodal: give a TEXT answer + a few illustrative
-    #    images. Covers questions ("what is X"), info requests ("tell me about X",
-    #    "info on X", "explain X"), and bare concepts ("adenocarcinoma").
+    # 3) KEYWORD-GATED images: only show a gallery when the user explicitly asks
+    #    to SEE images. Otherwise we answer with TEXT (no image dump).
+    show_kw = ("show", "display", "images", "image of", "picture", "photos",
+               "photo of", "scans", "scan of", "examples", "gallery", "see image",
+               "find image", "give me image", "give me picture", "give me scan")
+    if any(k in m for k in show_kw):
+        return "retrieve"
+
+    # 4) DEFAULT = TEXT answer only (no images unless keywords above).
     return "ask"
 
 
