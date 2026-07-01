@@ -89,6 +89,64 @@ def prepare(cfg):
 
 
 # ---------------------------------------------------------------------------
+def prepare_radiology(cfg):
+    """Append REAL radiology images (ROCOv2: chest/CT/MRI/brain) to the bank so
+    radiology queries have hits. Embeds with BiomedCLIP and appends to the
+    existing pathology bank (does NOT re-embed pathology)."""
+    from datasets import load_dataset
+
+    rcfg = cfg["retrieval"]
+    bank_dir, emb_file, meta_file = _bank_paths(cfg)
+    model, preprocess, tokenizer, device = load_biomedclip(rcfg["clip_model"])
+
+    if not emb_file.exists():
+        raise FileNotFoundError("Build the pathology bank first (prepare).")
+    bank, metas = load_bank(cfg)
+    # drop any previous radiology rows so this is idempotent
+    keep = [i for i, m in enumerate(metas) if m.get("source") != "radiology"]
+    bank = bank[keep]; metas = [metas[i] for i in keep]
+    start = len([m for m in metas])
+
+    n = rcfg["radiology_subset"]
+    thumb = rcfg["thumb_size"]
+    print(f"[radiology] Adding {n} ROCOv2 radiology images to the bank...")
+    ds = load_dataset(rcfg["radiology_dataset"], split="train", streaming=True)
+    imgs, new_metas, seen = [], [], set()
+    for ex in ds:
+        cap = (ex.get("caption") or "").strip()
+        if not cap:
+            continue
+        h = _img_hash(ex["image"])
+        if h in seen:
+            continue
+        seen.add(h)
+        idx = start + len(imgs)
+        rel = f"rad_{idx:05d}.jpg"
+        thumb_img = ex["image"].convert("RGB").resize((thumb, thumb))
+        thumb_img.save(bank_dir / rel, quality=85)
+        imgs.append(thumb_img)
+        new_metas.append({"file": rel, "question": cap[:80],
+                          "answer": "radiology", "source": "radiology"})
+        if len(imgs) >= n:
+            break
+
+    print(f"[radiology] Embedding {len(imgs)} radiology images (CPU)...")
+    embs, B = [], 32
+    for i in range(0, len(imgs), B):
+        embs.append(encode_images(model, preprocess, device, imgs[i:i + B]))
+        print(f"  {min(i+B, len(imgs))}/{len(imgs)}", end="\r")
+    print()
+    rad_embs = torch.cat(embs).numpy().astype("float32")
+
+    combined = np.concatenate([bank.numpy().astype("float32"), rad_embs], axis=0)
+    metas = metas + new_metas
+    np.savez_compressed(emb_file, embeddings=combined)
+    with open(meta_file, "w", encoding="utf-8") as f:
+        json.dump(metas, f)
+    print(f"[radiology] Bank now {combined.shape[0]} images "
+          f"({start} pathology + {len(imgs)} radiology)")
+
+
 def load_bank(cfg):
     """Load saved bank embeddings + metadata for querying."""
     _, emb_file, meta_file = _bank_paths(cfg)
@@ -267,6 +325,9 @@ def main():
     arg = sys.argv[1] if len(sys.argv) > 1 else "all"
     if arg == "concepts":
         evaluate_concepts(cfg)
+        return
+    if arg == "radiology":
+        prepare_radiology(cfg)
         return
     if arg.startswith("query:"):
         for meta, score in query(cfg, arg[len("query:"):], topk=5):

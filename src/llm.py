@@ -58,6 +58,16 @@ def compose_report(cfg, caption, vqa_answer=None, concepts=None):
     return chat(cfg, SYSTEM, user)
 
 
+def answer_question(cfg, question):
+    """Concise general explanation for a concept question (e.g. 'what is
+    hemorrhage?'). Uses the LLM's general knowledge with an explicit disclaimer;
+    NOT tied to a specific image and NOT medical advice."""
+    system = ("You are a medical education assistant. Give a concise, factual "
+              "2-3 sentence explanation of the medical concept asked. Be accurate "
+              "and neutral. Do not give medical advice.")
+    return chat(cfg, system, question)
+
+
 def compose_answer(cfg, question, vqa_answer, caption):
     user = (f"Question: {question}\nModel's predicted answer: {vqa_answer}\n"
             f"Image description: {caption}\n"

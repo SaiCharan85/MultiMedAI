@@ -14,17 +14,38 @@ from src.common import resolve
 
 
 def detect_intent(message: str, has_image: bool) -> str:
-    m = (message or "").lower()
-    gen_words = ("generate", "synthesize", "synthesise", "create an image",
-                 "make an image", "draw")
-    if any(w in m for w in gen_words):
+    """Route a message to: generate | retrieve | vqa | report | ask.
+
+    Key distinction the user asked for:
+      - a REQUEST to see images ("show me X")      -> retrieve (return images)
+      - a QUESTION ("what does this represent?")   -> vqa/ask (return TEXT)
+    """
+    m = (message or "").lower().strip()
+
+    # 1) explicit image generation
+    if any(w in m for w in ("generate", "synthesize", "synthesise",
+                            "create an image", "make an image", "draw")):
         return "generate"
+
+    # 2) EXPLICIT request to see ONLY images -> pure gallery
+    show_triggers = ("show me", "show images", "show me images", "find images",
+                     "images of", "image of", "pictures of", "picture of",
+                     "see examples", "display images", "just images", "only images",
+                     "give me images", "give me pictures")
+    if any(t in m for t in show_triggers):
+        return "retrieve"
+
+    # 3) an uploaded image present -> answer about THAT image (text)
+    report_words = ("describe", "caption", "report", "findings", "summary")
     if has_image:
-        report_words = ("describe", "caption", "report", "findings", "summary")
         if any(w in m for w in report_words):
             return "report"
-        return "vqa"          # default for an uploaded image
-    return "retrieve"          # text-only -> find matching images
+        return "vqa"
+
+    # 4) DEFAULT = text-first, multimodal: give a TEXT answer + a few illustrative
+    #    images. Covers questions ("what is X"), info requests ("tell me about X",
+    #    "info on X", "explain X"), and bare concepts ("adenocarcinoma").
+    return "ask"
 
 
 def vqa_available(cfg) -> bool:

@@ -53,7 +53,7 @@ retrieval:
   # PubMedBERT (medical), vs QuiltNet's casual-caption text encoder.
   clip_model: hf-hub:microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224
   dataset: flaviagiammarino/path-vqa
-  bank_size: 2000        # unique images embedded for the demo bank (CPU-sized)
+  bank_size: 5000        # embed ALL unique PathVQA images -> more candidates/hits
   eval_gallery: 500      # held-out unique images used as the Recall@k gallery
   thumb_size: 224
   topk: [1, 5, 10]
@@ -61,6 +61,10 @@ retrieval:
   # Top real matches score ~0.40-0.45; below this we say "no confident match"
   # instead of returning misleading images. Heuristic, tunable.
   min_score: 0.30
+  # RADIOLOGY source (ROCOv2): real chest X-ray / CT / MRI / brain images +
+  # captions, appended to the pathology bank so chest/brain queries have hits.
+  radiology_dataset: eltorio/ROCOv2-radiology
+  radiology_subset: 3000
 
 vqa:
   # same pathology-specialized encoder as retrieval (see note above)

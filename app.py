@@ -122,7 +122,9 @@ def do_retrieve(query, topk):
     from src.biomedclip import encode_texts
     model, preprocess, tokenizer, device = _clip()
     bank, metas = _bank()
-    q = encode_texts(model, tokenizer, device, [f"histopathology image showing {query}"])
+    # Use the RAW query — do NOT force "histopathology", which biased every
+    # search toward pathology and broke radiology (chest/brain) queries.
+    q = encode_texts(model, tokenizer, device, [query])
     sims = (q @ bank.T).squeeze(0)
     vals, idx = sims.topk(min(topk, len(metas)))
     bank_dir = resolve(cfg["paths"]["data"], "image_bank")
@@ -173,7 +175,7 @@ with st.sidebar:
     if user_img:
         st.image(user_img, caption="Active image", use_column_width=True)
 
-    topk = st.slider("Images to retrieve", 3, 9, 6)
+    topk = st.slider("Images to retrieve", 3, 15, 9)
     allow_gen = st.toggle("Allow image generation (slow, ~50s)", value=False)
 
     st.markdown("### Capabilities")
@@ -224,12 +226,12 @@ if prompt:
         st.markdown(prompt)
 
     intent = engine.detect_intent(prompt, user_img is not None)
+    min_score = cfg["retrieval"].get("min_score", 0.0)
     with st.chat_message("assistant"):
         imgs_payload = []
         if intent == "retrieve":
-            with st.spinner("Searching the pathology image bank…"):
+            with st.spinner("Searching the image bank…"):
                 hits = do_retrieve(prompt, topk)
-            min_score = cfg["retrieval"].get("min_score", 0.0)
             confident = [h for h in hits if h[2] >= min_score]
             if not confident:
                 best = hits[0][2] if hits else 0.0
@@ -251,6 +253,30 @@ if prompt:
                     imgs_payload.append((str(path), cap))
                 st.caption("REAL images retrieved from PathVQA — not generated, "
                            "no hallucination. Score = cosine similarity (confidence).")
+
+        elif intent == "ask":
+            # a general QUESTION (no uploaded image) -> concise TEXT answer,
+            # plus a few illustrative REAL images if the bank has confident ones.
+            with st.spinner("Answering…"):
+                try:
+                    answer = llm.answer_question(cfg, prompt)
+                except Exception:
+                    answer = "(LLM unavailable — try again in a moment.)"
+                hits = do_retrieve(prompt, 3)
+                illustrative = [h for h in hits if h[2] >= min_score]
+            st.markdown(f"**Answer:** {answer}")
+            if illustrative:
+                st.caption("Related real images from the bank:")
+                cols = st.columns(3)
+                for i, (path, ctx, score) in enumerate(illustrative):
+                    cap = f"{score:.2f} · {ctx[:32]}"
+                    with cols[i % 3]:
+                        st.image(Image.open(str(path)).convert("RGB"),
+                                 caption=cap, use_column_width=True)
+                    imgs_payload.append((str(path), cap))
+            st.caption("General explanation by the LLM (Qwen2.5) — educational, "
+                       "not a diagnosis. Images (if any) are real, retrieved.")
+            text = answer
 
         elif intent == "vqa":
             if not engine.vqa_available(cfg):
