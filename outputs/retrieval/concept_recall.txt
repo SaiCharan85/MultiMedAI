@@ -1,0 +1,6 @@
+query_concepts=40
+gallery_images=500
+Hit@1=32.50%
+Hit@5=62.50%
+Hit@10=65.00%
+device=cpu

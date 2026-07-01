@@ -1,0 +1,5 @@
+gallery_images=500
+Recall@1=8.40%
+Recall@5=21.60%
+Recall@10=29.20%
+device=cpu

@@ -1,0 +1,96 @@
+# MultiMedAI — all knobs live here. NO absolute paths anywhere in code; everything
+# is resolved relative to the repo root. Keep subsets small so each step is CPU-sized.
+
+seed: 42
+device: cpu          # HARD constraint: AMD/Windows has no usable torch GPU path.
+
+paths:
+  data: data
+  weights: weights
+  outputs: outputs
+
+# ---------------------------------------------------------------------------
+# Component 1: SYNTHESIS — Stable Diffusion v1.5, INFERENCE ONLY.
+# Conditioned by SD's built-in CLIP ViT-L/14 text encoder (used as-is, no training).
+# ---------------------------------------------------------------------------
+synthesis:
+  model_id: runwayml/stable-diffusion-v1-5
+  image_size: 256          # smaller than native 512 to keep CPU time sane
+  num_inference_steps: 20  # 20-25 is the CPU sweet spot
+  guidance_scale: 7.5
+  num_images: 4            # how many to generate for the demo / FID set
+  prompts:
+    - "a chest x-ray, frontal view, grayscale radiograph"
+    - "a histopathology slide, stained tissue under microscope"
+    - "an MRI scan of a human brain, axial slice, grayscale"
+    - "a retinal fundus photograph, color, ophthalmology"
+  fid:
+    enabled: true
+    # FID needs a "real" reference set. We reuse REAL pathology images from the
+    # open path-vqa dataset (same data the VQA/report components use). To make the
+    # comparison domain-matched, the FID generated set is produced from a single
+    # histopathology prompt with varied seeds. Small => CPU-friendly, and FID is
+    # HIGH-VARIANCE on small samples (reported honestly, not full-scale).
+    real_subset: 8
+    gen_subset: 8
+    fid_prompt: "a histopathology slide, stained tissue under microscope, H&E"
+
+# ---------------------------------------------------------------------------
+# Component 2: VQA — BiomedCLIP (frozen, aligned image+text space) + small head.
+# Dataset: flaviagiammarino/path-vqa (open, no credentials).
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# RETRIEVAL backbone — BiomedCLIP image bank for "answer with images".
+# Text query -> BiomedCLIP text embedding -> cosine sim vs precomputed image
+# bank -> top-k images. Encoder FROZEN. Real metric: Recall@k (text->image).
+# ---------------------------------------------------------------------------
+retrieval:
+  # ENCODER BENCHMARK (concept-relevance Hit@10, 500 val images, CPU):
+  #   BiomedCLIP B/16 : 65.0%   <- best, chosen
+  #   QuiltNet  B/16 : 52.5%
+  #   QuiltNet  B/32 : 37.5%
+  # BiomedCLIP wins: our queries are clinical TERMS and its text encoder is
+  # PubMedBERT (medical), vs QuiltNet's casual-caption text encoder.
+  clip_model: hf-hub:microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224
+  dataset: flaviagiammarino/path-vqa
+  bank_size: 2000        # unique images embedded for the demo bank (CPU-sized)
+  eval_gallery: 500      # held-out unique images used as the Recall@k gallery
+  thumb_size: 224
+  topk: [1, 5, 10]
+  # No-hallucination guard: cosine-similarity floor for a "confident" match.
+  # Top real matches score ~0.40-0.45; below this we say "no confident match"
+  # instead of returning misleading images. Heuristic, tunable.
+  min_score: 0.30
+
+vqa:
+  # same pathology-specialized encoder as retrieval (see note above)
+  clip_model: hf-hub:microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224
+  dataset: flaviagiammarino/path-vqa
+  train_subset: 2500       # examples; images dedup-cached so CPU stays ~10-15 min
+  val_subset: 800
+  epochs: 40               # mini-batch on precomputed embeddings (fast on CPU)
+  lr: 0.0003               # lower LR: 1e-3 was unstable (loss bounced 2->4.8)
+  max_answers: 300         # closed vocab of most-frequent answers (classification head)
+
+# ---------------------------------------------------------------------------
+# Component 3: REPORT / CAPTION — image -> short text.
+# Inference path uses BLIP-base (fast on CPU); eval reports real BLEU/ROUGE.
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# LLM — free, CPU-runnable instruction model (flan-t5, already cached). Acts as
+# the assistant "brain": composes reports / conversational answers from the
+# retrieval + VQA + caption outputs (RAG-style). NOT a medical oracle — it only
+# rephrases grounded inputs, reported honestly.
+# ---------------------------------------------------------------------------
+llm:
+  # Qwen2.5-1.5B-Instruct: Apache-2.0, modern, efficient decoder LLM. Runs on
+  # CPU in ~10-20s. Alternatives (already cached): microsoft/phi-2,
+  # mistralai/Mistral-7B-Instruct (more capable, slower on CPU).
+  model_id: Qwen/Qwen2.5-1.5B-Instruct
+  max_new_tokens: 160
+
+report:
+  model_id: Salesforce/blip-image-captioning-base
+  dataset: flaviagiammarino/path-vqa   # reuse images; captions from Q/A as references
+  eval_subset: 50
+  max_new_tokens: 30

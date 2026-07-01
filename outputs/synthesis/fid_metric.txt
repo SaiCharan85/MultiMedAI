@@ -1,0 +1,4 @@
+FID=511.411
+real_images=8
+generated_images=8
+device=cpu

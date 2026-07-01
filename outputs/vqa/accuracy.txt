@@ -1,0 +1,5 @@
+val_n=800
+overall=32.88%
+yes_no=54.45%
+open_ended=0.00%
+device=cpu

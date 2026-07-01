@@ -1,0 +1,42 @@
+# MultiMedAI — pinned, CPU-only. Install torch from the CPU index FIRST (see README):
+#
+#   pip install torch==2.2.2 torchvision==0.17.2 --index-url https://download.pytorch.org/whl/cpu
+#   pip install -r requirements.txt
+#
+# torch/torchvision come from the CPU index above (not pinned here so the index URL
+# governs the build). numpy is pinned <2 because torch 2.2.x is compiled against the
+# numpy 1.x ABI; numpy 2.x triggers "Numpy is not available" / ABI crashes.
+
+# --- ABI-critical pin ---
+numpy==1.26.4
+
+# --- core DL / models ---
+transformers==4.46.0
+diffusers==0.31.0
+accelerate==1.6.0
+safetensors==0.5.3
+sentencepiece==0.2.0
+huggingface_hub==0.32.4
+
+# --- data ---
+datasets==3.0.1
+# pillow<11 required by streamlit 1.31.0; 10.4.0 also satisfies torchvision.
+pillow==10.4.0
+
+# --- BiomedCLIP (aligned biomedical image-text embeddings) ---
+open_clip_torch==2.32.0
+
+# --- metrics: FID (synthesis), BLEU/ROUGE (report) ---
+torchmetrics==1.5.1
+pytorch-fid==0.3.0
+evaluate==0.4.3
+sacrebleu==2.4.3
+rouge_score==0.1.2
+nltk==3.8.1
+scipy==1.13.1
+
+# --- demo UI ---
+streamlit==1.31.0
+
+# --- config ---
+PyYAML==6.0.2

@@ -1,0 +1,36 @@
+# --- MultiMedAI: keep heavy/credentialed artifacts out of git ---
+data/
+weights/
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+
+# model / checkpoint files
+*.ckpt
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.onnx
+
+# large media (committed samples live in outputs/ and are added with -f)
+*.mp4
+*.mov
+*.zip
+*.tar
+*.tar.gz
+
+# HF / torch caches if they land locally
+.cache/
+hf_cache/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.ipynb_checkpoints/
+
+# allow small committed sample outputs
+!outputs/
+!outputs/**
