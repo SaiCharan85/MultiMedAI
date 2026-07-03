@@ -14,10 +14,14 @@ paths:
 # Conditioned by SD's built-in CLIP ViT-L/14 text encoder (used as-is, no training).
 # ---------------------------------------------------------------------------
 synthesis:
-  model_id: runwayml/stable-diffusion-v1-5
-  image_size: 256          # smaller than native 512 to keep CPU time sane
-  num_inference_steps: 20  # 20-25 is the CPU sweet spot
-  guidance_scale: 7.5
+  # SD-Turbo: distilled Stable Diffusion that produces a good image in 1-4 steps
+  # (vs 20-25 for SD1.5) -> much faster on CPU AND higher quality. Uses
+  # guidance_scale=0 (turbo is trained without CFG).
+  model_id: stabilityai/sd-turbo
+  weights_subdir: sdturbo
+  image_size: 512          # SD-Turbo native
+  num_inference_steps: 3   # turbo: 1-4 steps is enough
+  guidance_scale: 0.0      # turbo requires CFG off
   num_images: 4            # how many to generate for the demo / FID set
   prompts:
     - "a chest x-ray, frontal view, grayscale radiograph"
@@ -94,7 +98,7 @@ llm:
   # CPU in ~10-20s. Alternatives (already cached): microsoft/phi-2,
   # mistralai/Mistral-7B-Instruct (more capable, slower on CPU).
   model_id: Qwen/Qwen2.5-1.5B-Instruct
-  max_new_tokens: 160
+  max_new_tokens: 110      # shorter = faster on CPU + less room to hallucinate
 
 report:
   model_id: Salesforce/blip-image-captioning-base

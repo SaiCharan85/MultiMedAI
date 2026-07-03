@@ -28,67 +28,122 @@ st.set_page_config(page_title="MultiMedAI", page_icon="🧬", layout="wide")
 st.markdown(
     """
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600&display=swap');
 
     :root{
-      --bg:#0a0e1a; --panel:#111726; --accent:#2dd4bf; --accent2:#a78bfa;
-      --text:#e6edf6; --dim:#8492ad; --border:rgba(148,163,184,.14);
+      --bg:#0b1020; --bg2:#0e1428; --panel:#141c33; --panel2:#182142;
+      --brand:#14b8a6; --brand2:#6366f1; --ink:#eaf0fb; --dim:#93a1c0;
+      --line:rgba(148,163,184,.16); --good:#34d399; --warn:#fbbf24;
     }
     .stApp{
       background:
-        radial-gradient(1100px 520px at 12% -8%, rgba(45,212,191,.16), transparent 60%),
-        radial-gradient(1000px 520px at 92% 4%, rgba(167,139,250,.16), transparent 60%),
-        var(--bg);
-      color:var(--text);
+        radial-gradient(1200px 600px at 8% -10%, rgba(20,184,166,.10), transparent 55%),
+        radial-gradient(1100px 600px at 95% 0%, rgba(99,102,241,.12), transparent 55%),
+        linear-gradient(180deg,var(--bg),var(--bg2));
+      color:var(--ink);
     }
-    /* hide default chrome for a cleaner app feel */
     #MainMenu, header, footer{visibility:hidden;}
-    .block-container{padding-top:2.2rem; max-width:1050px;}
+    .block-container{padding-top:1.2rem; max-width:1080px; position:relative; z-index:1;}
+    section[data-testid="stSidebar"]{position:relative; z-index:1;}
+    body,p,div,span,label,input,textarea{font-family:'Inter',system-ui,sans-serif;}
 
-    h1,h2,h3,.brand{font-family:'Sora',sans-serif!important; letter-spacing:-.02em;}
-    body, p, div, span, label{font-family:'Inter',sans-serif;}
-
-    .brand{
-      font-size:2.1rem; font-weight:800; margin-bottom:.1rem;
-      background:linear-gradient(100deg,#fff,#2dd4bf 55%,#a78bfa);
-      -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+    /* ---- animated DNA double-helix background (subtle, behind everything) ---- */
+    .stApp::before{
+      content:""; position:fixed; inset:-12% -12% -12% -12%; z-index:0; pointer-events:none;
+      background-image:url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNDAiIGhlaWdodD0iMjYwIiB2aWV3Qm94PSIwIDAgMTQwIDI2MCI+CjxnIGZpbGw9Im5vbmUiIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIj4KPHBhdGggZD0iTTQwIDAgQzExMCA0NSAxMTAgODUgNDAgMTMwIEMtMzAgMTc1IC0zMCAyMTUgNDAgMjYwIiBzdHJva2U9IiMxNGI4YTYiLz4KPHBhdGggZD0iTTEwMCAwIEMzMCA0NSAzMCA4NSAxMDAgMTMwIEMxNzAgMTc1IDE3MCAyMTUgMTAwIDI2MCIgc3Ryb2tlPSIjNjM2NmYxIi8+CjwvZz4KPGcgc3Ryb2tlPSIjNWVlYWQ0IiBzdHJva2Utd2lkdGg9IjIiIG9wYWNpdHk9IjAuOSI+CjxsaW5lIHgxPSI1MiIgeTE9IjE0IiB4Mj0iODgiIHkyPSIxNCIvPgo8bGluZSB4MT0iNjYiIHkxPSIzMCIgeDI9IjkyIiB5Mj0iMzAiLz4KPGxpbmUgeDE9Ijc0IiB5MT0iNDgiIHgyPSI5MiIgeTI9IjQ4Ii8+CjxsaW5lIHgxPSI3MCIgeTE9Ijk2IiB4Mj0iODgiIHkyPSI5NiIvPgo8bGluZSB4MT0iNTIiIHkxPSIxMTYiIHgyPSI4OCIgeTI9IjExNiIvPgo8bGluZSB4MT0iNTIiIHkxPSIxNDQiIHgyPSI4OCIgeTI9IjE0NCIvPgo8bGluZSB4MT0iNDgiIHkxPSIxNjQiIHgyPSI2NiIgeTI9IjE2NCIvPgo8bGluZSB4MT0iNDgiIHkxPSIyMTIiIHgyPSI2NiIgeTI9IjIxMiIvPgo8bGluZSB4MT0iNTIiIHkxPSIyMzAiIHgyPSI4OCIgeTI9IjIzMCIvPgo8bGluZSB4MT0iNTIiIHkxPSIyNDYiIHgyPSI4OCIgeTI9IjI0NiIvPgo8L2c+PC9zdmc+");
+      background-size:150px auto; opacity:.06;
+      animation:dnaflow 24s linear infinite;
     }
-    .tagline{color:var(--dim); margin-bottom:1.2rem; font-size:.95rem;}
+    @keyframes dnaflow{ to{ background-position:0 -1040px; } }
+    @media (prefers-reduced-motion: reduce){ .stApp::before{ animation:none; } }
+    h1,h2,h3,.hdr-title{font-family:'Plus Jakarta Sans',sans-serif!important; letter-spacing:-.02em;}
 
-    /* chat bubbles */
+    /* ---- top header bar ---- */
+    .hdr{
+      display:flex; align-items:center; gap:14px; padding:16px 20px; margin-bottom:14px;
+      background:linear-gradient(120deg, rgba(20,184,166,.12), rgba(99,102,241,.12));
+      border:1px solid var(--line); border-radius:18px;
+      box-shadow:0 12px 40px -20px rgba(0,0,0,.7);
+    }
+    .hdr-logo{
+      width:46px;height:46px;border-radius:13px;display:grid;place-items:center;
+      background:linear-gradient(135deg,var(--brand),var(--brand2));
+      font-size:24px; box-shadow:0 8px 20px -6px rgba(20,184,166,.55);
+    }
+    .hdr-title{font-size:1.5rem;font-weight:800;line-height:1.1;color:#fff;}
+    .hdr-sub{color:var(--dim);font-size:.86rem;margin-top:2px;}
+    .hdr-chip{
+      margin-left:auto; padding:.35rem .7rem;border-radius:999px;font-size:.72rem;
+      font-weight:700;color:#052e2b;background:var(--brand);white-space:nowrap;
+    }
+    .disclaimer{
+      display:flex;gap:10px;align-items:center;padding:10px 14px;border-radius:12px;
+      background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.28);
+      color:#fde68a;font-size:.82rem;margin-bottom:6px;
+    }
+
+    /* ---- chat bubbles ---- */
     [data-testid="stChatMessage"]{
-      background:var(--panel); border:1px solid var(--border);
-      border-radius:16px; padding:.4rem .9rem; box-shadow:0 8px 30px -16px rgba(0,0,0,.6);
+      background:var(--panel); border:1px solid var(--line);
+      border-radius:16px; padding:.5rem 1rem; margin-bottom:.5rem;
+      box-shadow:0 10px 34px -22px rgba(0,0,0,.8);
     }
-    /* sidebar */
+    [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]){
+      background:linear-gradient(180deg,var(--panel2),var(--panel));
+      border-color:rgba(99,102,241,.28);
+    }
+
+    /* ---- sidebar ---- */
     section[data-testid="stSidebar"]{
-      background:linear-gradient(180deg,#0c1120,#0a0e1a); border-right:1px solid var(--border);
+      background:linear-gradient(180deg,#0d1428,#0b1020); border-right:1px solid var(--line);
     }
+    section[data-testid="stSidebar"] h3{
+      font-size:.78rem!important;text-transform:uppercase;letter-spacing:.08em;
+      color:var(--dim)!important;margin:.4rem 0 .3rem;
+    }
+
+    /* ---- pills / badges ---- */
     .pill{
-      display:inline-block; padding:.18rem .6rem; border-radius:999px; font-size:.72rem;
-      border:1px solid var(--border); color:var(--dim); margin:.1rem .2rem 0 0;
+      display:inline-block; padding:.2rem .6rem; border-radius:999px; font-size:.7rem;
+      border:1px solid var(--line); color:var(--dim); margin:.12rem .2rem 0 0; font-weight:600;
     }
-    .pill.on{color:#0a0e1a; background:var(--accent); border-color:var(--accent); font-weight:700;}
-    .pill.off{color:var(--dim);}
+    .pill.on{color:#052e2b; background:var(--brand); border-color:var(--brand);}
     .metric-card{
-      background:var(--panel); border:1px solid var(--border); border-radius:14px;
-      padding:.7rem .9rem; margin-bottom:.6rem;
+      background:var(--panel); border:1px solid var(--line); border-radius:12px;
+      padding:.6rem .8rem; margin-bottom:.5rem;
     }
-    .metric-card b{color:var(--accent);}
-    .stChatInput textarea{background:var(--panel)!important; color:var(--text)!important;}
+    .metric-card b{color:var(--brand);}
+
+    /* ---- inputs / buttons ---- */
+    .stChatInput textarea{background:var(--panel)!important;color:var(--ink)!important;
+      border-radius:12px!important;}
     .stButton>button{
-      border-radius:12px; border:1px solid var(--border); background:var(--panel); color:var(--text);
+      border-radius:11px; border:1px solid var(--line); background:var(--panel);
+      color:var(--ink); font-weight:600; transition:all .15s;
     }
-    .stButton>button:hover{border-color:var(--accent); color:var(--accent);}
+    .stButton>button:hover{border-color:var(--brand); color:var(--brand);
+      box-shadow:0 6px 18px -10px rgba(20,184,166,.7);}
+    .stImage img{border-radius:10px;border:1px solid var(--line);}
+    a{color:var(--brand)!important;}
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-st.markdown('<div class="brand">🧬 MultiMedAI</div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="tagline">A local pathology assistant — ask for images, ask about an '
-    "image, request a report, or generate one. CPU-only, open models &amp; data.</div>",
+    '<div class="hdr">'
+    '<div class="hdr-logo">🩺</div>'
+    '<div><div class="hdr-title">MultiMedAI</div>'
+    '<div class="hdr-sub">Medical image search · vision analysis · document intelligence '
+    '— offline, open-source, CPU</div></div>'
+    '<div class="hdr-chip">EDUCATION / RESEARCH</div>'
+    '</div>',
+    unsafe_allow_html=True,
+)
+st.markdown(
+    '<div class="disclaimer">⚕️ <span><b>Educational / research use only — not a medical '
+    'device.</b> Outputs are not a diagnosis or treatment advice. Always consult a '
+    'qualified clinician.</span></div>',
     unsafe_allow_html=True,
 )
 
@@ -179,28 +234,95 @@ MODALITIES = [
 ]
 
 
+def neighbors_for_image(pil_img, k=3):
+    """RAG grounding: find the k most similar REAL bank images and return their
+    real captions. Used to ground reports so the LLM summarizes REAL context
+    instead of inventing findings."""
+    import torch
+    from src.biomedclip import encode_images
+    model, preprocess, tokenizer, device = _clip()
+    bank, metas = _bank()
+    ie = encode_images(model, preprocess, device, [pil_img])
+    sims = (ie @ bank.T).squeeze(0)
+    vals, idx = sims.topk(min(k, len(metas)))
+    return [(metas[i].get("question", ""), float(vals[j]))
+            for j, i in enumerate(idx.tolist())]
+
+
+# modality -> candidate FINDINGS (zero-shot labels). Keyed by what the modality
+# check detects, so findings are relevant to the image type (accurate across
+# brain / chest / pathology / abdomen / bone / retina).
+FINDINGS = {
+    "brain": ["a brain tumor or mass", "an intracranial hemorrhage",
+              "an ischemic stroke / infarct", "white matter lesions",
+              "hydrocephalus (enlarged ventricles)", "a normal brain"],
+    "chest": ["pulmonary tuberculosis", "pneumonia", "COVID-19 pneumonia",
+              "a lung mass or nodule", "pleural effusion", "cardiomegaly",
+              "a normal chest"],
+    "abdom": ["a mass or tumor", "bowel obstruction", "free fluid / ascites",
+              "an abscess or collection", "normal abdomen"],
+    "patho": ["carcinoma / malignant tumor tissue", "inflammation",
+              "necrosis", "benign tissue", "normal tissue"],
+    "bone": ["a fracture", "arthritis / joint degeneration", "a bone lesion",
+             "normal bone"],
+    "retina": ["diabetic retinopathy", "glaucoma", "macular degeneration",
+               "a normal retina"],
+    "ultra": ["a cyst", "a mass", "a stone / calculus", "normal ultrasound"],
+}
+
+
+def _modality_key(modality: str) -> str:
+    m = modality.lower()
+    if "brain" in m: return "brain"
+    if "chest" in m: return "chest"
+    if "abdom" in m or "pelvic" in m: return "abdom"
+    if "histopath" in m or "slide" in m: return "patho"
+    if "bone" in m or "limb" in m: return "bone"
+    if "retina" in m or "fundus" in m: return "retina"
+    if "ultrasound" in m: return "ultra"
+    return "patho"
+
+
 def do_modality_check(pil_img):
-    """Zero-shot: what kind of medical image is this? (BiomedCLIP image-vs-text).
-    Lets the app say e.g. 'this looks like a chest X-ray, NOT a brain scan.'"""
+    """Zero-shot: what kind of medical image is this? (BiomedCLIP image-vs-text)."""
     import torch
     from src.biomedclip import encode_images, encode_texts
     model, preprocess, tokenizer, device = _clip()
     ie = encode_images(model, preprocess, device, [pil_img])
     te = encode_texts(model, tokenizer, device, MODALITIES)
-    sims = (ie @ te.T)[0]
-    probs = sims.softmax(0)
+    probs = (ie @ te.T)[0].softmax(0)
     k = int(probs.argmax())
     return MODALITIES[k], float(probs[k])
 
 
+def do_finding_check(pil_img, modality, topn=3):
+    """Finding suggestion. Uses a SUPERVISED head (accurate, e.g. chest ~94%) if
+    trained for this modality; else honest zero-shot (~chance). Returns
+    (list[(finding, prob)], reliable: bool)."""
+    from src.biomedclip import encode_images, encode_texts
+    from src import findings
+    model, preprocess, tokenizer, device = _clip()
+    ie = encode_images(model, preprocess, device, [pil_img])
+    key = _modality_key(modality)
+    if findings.available(key):
+        preds = findings.predict(key, ie, topn=topn)   # trained → reliable
+        return preds, True
+    labels = FINDINGS[key]                              # zero-shot fallback
+    te = encode_texts(model, tokenizer, device,
+                      [f"this medical image shows {l}" for l in labels])
+    probs = (ie @ te.T)[0].softmax(0)
+    order = probs.argsort(descending=True)[:topn].tolist()
+    return [(labels[i], float(probs[i])) for i in order], False
+
+
 def do_generate(prompt):
     import torch
-    from diffusers import StableDiffusionPipeline
+    from diffusers import AutoPipelineForText2Image
     scfg = cfg["synthesis"]
-    weights = resolve(cfg["paths"]["weights"], "sd15")
-    pipe = StableDiffusionPipeline.from_pretrained(
-        scfg["model_id"], torch_dtype=torch.float32, safety_checker=None, cache_dir=str(weights)
-    ).to(DEVICE)
+    weights = resolve(cfg["paths"]["weights"], scfg.get("weights_subdir", "sdturbo"))
+    pipe = AutoPipelineForText2Image.from_pretrained(
+        scfg["model_id"], torch_dtype=torch.float32, safety_checker=None,
+        cache_dir=str(weights)).to(DEVICE)
     lp = engine.lora_path(cfg)
     if lp:
         pipe.load_lora_weights(str(lp.parent))
@@ -237,6 +359,58 @@ with st.sidebar:
     topk = st.slider("Images to retrieve", 3, 15, 9)
     allow_gen = st.toggle("Allow image generation (slow, ~50s)", value=False)
 
+    # --- document analysis (thesis / PDF) ---
+    st.markdown("### 📄 Document analysis")
+    docup = st.file_uploader("Upload a thesis / PDF / TXT", type=["pdf", "txt"], key="docup")
+    if docup is not None:
+        import hashlib
+        sig = hashlib.md5(docup.getvalue()).hexdigest()
+        if st.session_state.get("doc_sig") != sig:
+            try:
+                with st.spinner("Ingesting document (extract → chunk → embed)…"):
+                    from src import docstore
+                    doc_id, nchunks = docstore.ingest(docup.getvalue(), docup.name)
+                st.session_state["active_doc_id"] = doc_id
+                st.session_state["active_doc_name"] = docup.name
+                st.session_state["doc_sig"] = sig
+                st.session_state["_last_doc_bytes"] = (docup.getvalue(), docup.name)
+                st.success(f"Ingested “{docup.name}” ({nchunks} chunks). "
+                           "Ask about it in the chat.")
+            except Exception as e:
+                st.error(f"Could not ingest: {e}")
+    if st.session_state.get("active_doc_id"):
+        st.caption(f"📄 Active document: **{st.session_state.get('active_doc_name','')}** "
+                   "— your questions are answered from it (with page citations).")
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("Clear document"):
+                for k in ("active_doc_id", "active_doc_name", "doc_sig"):
+                    st.session_state.pop(k, None)
+                st.rerun()
+        with c2:
+            # doctor-curation: permanently add this doc to the knowledge base
+            if st.button("➕ Add to KB", help="Add this document to the permanent "
+                         "knowledge base so future questions can cite it"):
+                try:
+                    from src import docstore
+                    docv = st.session_state.get("_last_doc_bytes")
+                    if docv:
+                        with st.spinner("Adding to knowledge base…"):
+                            n = docstore.add_document_to_kb(docv[0], docv[1])
+                        st.success(f"Added {n} passages to the KB.")
+                except Exception as e:
+                    st.error(f"Could not add: {e}")
+
+    # knowledge-base status (standing corpus + curated docs)
+    try:
+        from src import docstore as _ds
+        _kbn = _ds.kb_count()
+        if _kbn:
+            st.caption(f"📚 Knowledge base: **{_kbn:,}** passages "
+                       "(open literature + curated).")
+    except Exception:
+        pass
+
     st.markdown("### Capabilities")
     on = lambda b: "on" if b else "off"
     st.markdown(
@@ -265,8 +439,14 @@ with st.sidebar:
 if "messages" not in st.session_state:
     st.session_state.messages = [{
         "role": "assistant",
-        "content": "Hi! Ask me to **show pathology images** (e.g. *“show me adenocarcinoma”*), "
-                   "**upload an image** and ask a question, or request a **report**.",
+        "content": "👋 **Welcome to MultiMedAI.** I can help you:\n\n"
+                   "• 🖼️ **Find real images** — *“show chest x-rays of tuberculosis”*\n"
+                   "• 🔬 **Analyze an image** — upload/grab one, then *“analyse this”* "
+                   "(detailed vision-model narration + trained findings)\n"
+                   "• 📄 **Study a document** — upload a thesis/PDF, then *“generate a report”* "
+                   "or *“what dosage of X?”* (grounded, page-cited)\n"
+                   "• 📚 **Explain concepts** — *“what is a glioma?”*\n\n"
+                   "_Educational & research use — not a diagnosis._",
     }]
 
 for msg in st.session_state.messages:
@@ -278,7 +458,7 @@ for msg in st.session_state.messages:
             except Exception:
                 pass  # skip unreadable/placeholder entries
 
-prompt = st.chat_input("Ask about pathology images…")
+prompt = st.chat_input("Ask, search images, analyze an upload, or query a document…")
 if prompt:
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
@@ -288,7 +468,16 @@ if prompt:
     min_score = cfg["retrieval"].get("min_score", 0.0)
     with st.chat_message("assistant"):
         imgs_payload = []
-        if intent == "retrieve":
+        if engine.is_medical_advice_request(prompt):
+            text = ("🩺 I can't give a personal **diagnosis, treatment, or dosage "
+                    "recommendation** — I'm an offline **education/research** tool, not "
+                    "a clinician or an approved medical device. Please consult a "
+                    "qualified healthcare professional.\n\nI *can* help with: "
+                    "educational info, **real reference images** (*“show chest x-rays”*), "
+                    "**describing an uploaded image** (not a diagnosis), or answering "
+                    "from a **document** you upload.")
+            st.markdown(text)
+        elif intent == "retrieve":
             with st.spinner("Searching the image bank…"):
                 hits = do_retrieve(prompt, topk)
             confident = [h for h in hits if h[2] >= min_score]
@@ -321,43 +510,131 @@ if prompt:
                            "similarity. To analyze one, pick it in the sidebar "
                            "(“analyze a result image”) and ask, e.g. *“what is this?”*")
 
-        elif intent == "ask":
-            # TEXT-ONLY answer (no images unless the user used display keywords).
-            with st.spinner("Answering…"):
-                try:
-                    answer = llm.answer_question(cfg, prompt)
-                except Exception:
-                    answer = "(LLM unavailable — try again in a moment.)"
-            st.markdown(f"**Answer:** {answer}")
-            st.caption("Educational explanation by the LLM (Qwen2.5) — not a "
-                       "diagnosis. Add words like *show / images / scans* to see images.")
+        elif intent == "ask" and st.session_state.get("active_doc_id"):
+            # DOCUMENT RAG: grounded Q&A OR a structured report, both cited.
+            from src import docstore
+            did = st.session_state["active_doc_id"]
+            if engine.is_report_request(prompt):
+                with st.spinner("Generating a structured report from the document…"):
+                    aspects = ["objective and aim of the study",
+                               "methods and study design",
+                               "key results and findings",
+                               "metrics measurements dosages values",
+                               "limitations and conclusions"]
+                    seen, hits = set(), []
+                    for a in aspects:
+                        for h in docstore.search(did, a, k=2):
+                            if h["chunk_id"] not in seen:
+                                seen.add(h["chunk_id"]); hits.append(h)
+                    try:
+                        answer = llm.generate_document_report(cfg, hits)
+                    except Exception:
+                        answer = "(LLM unavailable — try again in a moment.)"
+                st.markdown(answer)
+            else:
+                with st.spinner("Searching the document…"):
+                    hits = docstore.search(did, prompt, k=5)
+                    try:
+                        answer = llm.answer_document(cfg, prompt, hits)
+                    except Exception:
+                        answer = "(LLM unavailable — try again in a moment.)"
+                st.markdown(f"**{answer}**")
+            if hits:
+                with st.expander("📑 Source passages (grounding — verify here)"):
+                    for h in hits:
+                        st.markdown(f"**p.{h['page']}** · sim {h['score']:.2f}\n\n"
+                                    f"{h['text'][:320]}…")
+            st.caption(f"Grounded in **{st.session_state.get('active_doc_name','')}** — "
+                       "cites pages, refuses if not in the document. Educational, not advice.")
             text = answer
+
+        elif intent == "ask":
+            pl = prompt.lower()
+            recency = any(w in pl for w in ("recent", "latest", "current", "today",
+                          "this year", "2024", "2025", "news", "up to date", "update",
+                          "nowadays"))
+            wants_report = any(w in pl for w in ("report", "overview", "review",
+                               "state of", "summary of", "guidelines"))
+            if recency or wants_report:
+                # CROSS-QUESTION instead of guessing — and be honest about no live data
+                topic = prompt.strip().rstrip("?.")
+                text = (
+                    "Quick check so I give you the *right* thing 👇\n\n"
+                    "⚠️ I run **fully offline on free local models**, so I **can't pull "
+                    "recent/live web reports** — my text knowledge is static (and may be "
+                    f"dated). For *“{topic}”*, do you want:\n\n"
+                    "1. 🖼️ **Real images** from the bank — e.g. *“show covid chest x-rays”*\n"
+                    "2. 📄 **Analysis of a document** — upload a recent paper/thesis in the "
+                    "sidebar, then ask (I'll answer with page citations)\n"
+                    "3. 📚 **General background** — e.g. *“explain covid”* (may be dated)\n\n"
+                    "Which one?")
+                st.markdown(text)
+            else:
+                # 1) try the standing KNOWLEDGE BASE (open literature) for grounding
+                from src import docstore
+                with st.spinner("Searching the medical knowledge base…"):
+                    kb_hits = docstore.search_kb(prompt, k=4, min_score=0.30)
+                if kb_hits:
+                    with st.spinner("Composing a grounded answer…"):
+                        try:
+                            answer = llm.answer_document(cfg, prompt, kb_hits)
+                        except Exception:
+                            answer = kb_hits[0]["text"][:400]
+                    text = f"**Answer:** {answer}"
+                    st.markdown(text)
+                    with st.expander(f"📚 Sources ({len(kb_hits)} passages from the knowledge base)"):
+                        for h in kb_hits:
+                            st.markdown(f"**[{h['page']}] {h['source']}** · sim {h['score']:.2f}  \n"
+                                        f"*{h['title']}*")
+                    st.caption("Grounded in the medical knowledge base (open PubMed "
+                               "literature + curated docs). Educational, not a diagnosis.")
+                else:
+                    # 2) fallback: ungrounded LLM background (clearly flagged)
+                    with st.spinner("Answering…"):
+                        try:
+                            answer = llm.answer_question(cfg, prompt)
+                        except Exception:
+                            answer = "(LLM unavailable — try again in a moment.)"
+                    text = f"**Answer:** {answer}"
+                    st.markdown(text)
+                    st.caption("⚠️ No close match in the knowledge base — this is the "
+                               "LLM's general (offline, possibly dated) knowledge, not "
+                               "grounded in a source. Not a diagnosis.")
 
         elif intent in ("vqa", "report"):
             # analyze the ACTIVE image (uploaded OR grabbed from results)
-            with st.spinner("Analyzing the image…"):
-                modality, mconf = do_modality_check(user_img)
-                cap = do_report(user_img)
-                vqa_line = ""
-                if intent == "vqa" and engine.vqa_available(cfg):
-                    ans = do_vqa(user_img, prompt)
-                    vqa_line = ("_VQA head:_ **" + ans[0][0] + f"** ({ans[0][1]:.0%}); "
-                                + ", ".join(f"{a} ({p:.0%})" for a, p in ans[1:]))
-                # LLM grounds its explanation on modality + caption (+ VQA if any)
+            with st.spinner("Analyzing the image with the vision model… (~1 min on CPU)"):
+                from src import vlm
+                # VLM SEES the image: narrate, or answer the user's specific question
+                q = prompt if intent == "vqa" else None
                 try:
-                    obs = f"Detected image type: {modality} (confidence {mconf:.0%}). {cap}"
-                    if vqa_line:
-                        obs += f" VQA prediction: {ans[0][0]}."
-                    if intent == "report":
-                        body = llm.compose_report(cfg, obs)
-                    else:
-                        body = llm.compose_answer(cfg, prompt, obs, cap)
-                except Exception:
-                    body = cap
-            text = (f"**{body}**\n\n"
-                    f"🔬 _Detected image type:_ **{modality}** ({mconf:.0%} confidence)\n\n"
-                    f"_Visual description:_ {cap}"
-                    + (f"\n\n{vqa_line}" if vqa_line else ""))
+                    body = vlm.describe(user_img, q)
+                except Exception as e:
+                    body = f"(Vision model unavailable: {e})"
+                modality, mconf = do_modality_check(user_img)
+                findings, supervised = do_finding_check(user_img, modality)
+                neighbors = neighbors_for_image(user_img, k=4)     # RAG grounding
+                neigh_caps = [c for c, s in neighbors if s >= min_score]
+                uniform = 1.0 / len(FINDINGS[_modality_key(modality)])
+                reliable = supervised or findings[0][1] >= uniform * 1.5
+            text = f"**{body}**\n\n🔬 _Image type:_ **{modality}** ({mconf:.0%})\n\n"
+            if supervised:
+                fs = " · ".join(f"{f} ({p:.0%})" for f, p in findings)
+                text += (f"🩻 _Finding (trained classifier, ~94% val acc):_ "
+                         f"**{findings[0][0]}** ({findings[0][1]:.0%}) · others: {fs}\n\n")
+            elif reliable:
+                text += (f"🩻 _Possible category (uncertain, zero-shot):_ "
+                         f"**{findings[0][0]}** ({findings[0][1]:.0%}) — not confirmed.\n\n")
+            else:
+                text += ("🩻 _Automated finding detection **inconclusive** (near-chance "
+                         "for this modality — no trained classifier yet). See real cases.*\n\n")
+            if neigh_caps:
+                text += "📚 _Most similar REAL cases in the library:_\n" + "\n".join(
+                    f"- “{c[:70]}”" for c in neigh_caps[:3])
+            text += ("\n\n_Narration by a general-domain vision model (moondream) — detailed "
+                     "but **not medically validated** and may err. The trained finding "
+                     "(where shown) and cited real cases are the reliable signals. "
+                     "**Educational, not a diagnosis.**_")
             # honest modality-mismatch flag (e.g. asked about brain, image is chest)
             pl = prompt.lower()
             if "brain" in pl and "brain" not in modality.lower():

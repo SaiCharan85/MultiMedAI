@@ -41,7 +41,9 @@ def caption_image(cfg, pil_image, max_new_tokens=None) -> str:
     processor, model, device = _load_blip(rcfg["model_id"])
     mnt = max_new_tokens or rcfg["max_new_tokens"]
     inputs = processor(pil_image.convert("RGB"), return_tensors="pt").to(device)
-    out = model.generate(**inputs, max_new_tokens=mnt)
+    # num_beams + no-repeat stops degenerate "mri mri mri..." captions
+    out = model.generate(**inputs, max_new_tokens=mnt, num_beams=3,
+                         repetition_penalty=1.5, no_repeat_ngram_size=2)
     return processor.decode(out[0], skip_special_tokens=True).strip()
 
 

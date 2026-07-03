@@ -167,24 +167,35 @@ def prepare_chestxray(cfg):
     per = rcfg["chest_per_class"]
     thumb = rcfg["thumb_size"]
     counts = {k: 0 for k in want}
-    print(f"[chest] Streaming up to {per} each of TB/COVID/Pneumonia...")
-    ds = load_dataset(rcfg["chest_dataset"], split="train", streaming=True)
     imgs, new_metas = [], []
-    for ex in ds:
-        lab = ex["label"]
-        if lab not in want or counts[lab] >= per:
-            continue
-        counts[lab] += 1
-        idx = start + len(imgs)
-        rel = f"tb_{idx:05d}.jpg"
-        t = ex["image"].convert("RGB").resize((thumb, thumb))
-        t.save(bank_dir / rel, quality=85)
-        imgs.append(t)
-        new_metas.append({"file": rel, "question": f"chest X-ray, {want[lab]}",
-                          "answer": want[lab], "source": "tb"})
-        if all(counts[k] >= per for k in want):
-            break
-    print(f"[chest] Collected {counts}")
+    print(f"[chest] Streaming up to {per} each of TB/COVID/Pneumonia (resilient)...")
+    # This dataset's CDN drops connections; retry a few times and KEEP partial
+    # results instead of failing the whole append.
+    for attempt in range(5):
+        try:
+            ds = load_dataset(rcfg["chest_dataset"], split="train", streaming=True)
+            for ex in ds:
+                lab = ex["label"]
+                if lab not in want or counts[lab] >= per:
+                    continue
+                counts[lab] += 1
+                idx = start + len(imgs)
+                rel = f"tb_{idx:05d}.jpg"
+                t = ex["image"].convert("RGB").resize((thumb, thumb))
+                t.save(bank_dir / rel, quality=85)
+                imgs.append(t)
+                new_metas.append({"file": rel, "question": f"chest X-ray, {want[lab]}",
+                                  "answer": want[lab], "source": "tb"})
+                if all(counts[k] >= per for k in want):
+                    break
+            break  # finished cleanly
+        except Exception as e:  # noqa: BLE001 - connection drops expected
+            print(f"  [attempt {attempt+1}] connection dropped ({type(e).__name__}); "
+                  f"kept {len(imgs)} so far, retrying...")
+    print(f"[chest] Collected {counts} ({len(imgs)} images)")
+    if not imgs:
+        print("[chest] Got nothing (network). TB is still covered via ROCO captions.")
+        return
 
     print(f"[chest] Embedding {len(imgs)} chest X-rays (CPU)...")
     embs, B = [], 32

@@ -13,6 +13,26 @@ from __future__ import annotations
 from src.common import resolve
 
 
+def is_medical_advice_request(message: str) -> bool:
+    """Detect personal-diagnosis / treatment-advice requests we must NOT answer
+    as if authoritative (safety boundary). Educational queries are NOT flagged."""
+    m = (message or "").lower()
+    patterns = ("diagnose me", "diagnose my", "do i have", "am i sick",
+                "should i take", "what should i take", "what medication should i",
+                "treat my", "cure my", "what's wrong with me", "whats wrong with me",
+                "is my", "prescribe", "dosage should i", "how much should i take")
+    return any(p in m for p in patterns)
+
+
+def is_report_request(message: str) -> bool:
+    """User wants a structured report/summary generated (from an active document)."""
+    m = (message or "").lower()
+    return any(p in m for p in ("generate a report", "generate report", "make a report",
+               "write a report", "summarize the", "summary of the", "summarise the",
+               "give me a report", "report on this", "overview of the document",
+               "structured report", "full summary"))
+
+
 def detect_intent(message: str, has_image: bool) -> str:
     """Route a message to: generate | retrieve | vqa | report | ask.
 
