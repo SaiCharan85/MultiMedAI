@@ -20,6 +20,7 @@ import sys
 
 import numpy as np
 import torch
+from PIL import Image
 
 from src.common import load_config, resolve, ensure_dir, set_seed
 from src.biomedclip import load_biomedclip, encode_images, encode_texts
@@ -102,49 +103,174 @@ def prepare_radiology(cfg):
     if not emb_file.exists():
         raise FileNotFoundError("Build the pathology bank first (prepare).")
     bank, metas = load_bank(cfg)
-    # drop any previous radiology rows so this is idempotent
-    keep = [i for i, m in enumerate(metas) if m.get("source") != "radiology"]
-    bank = bank[keep]; metas = [metas[i] for i in keep]
-    start = len([m for m in metas])
-
-    n = rcfg["radiology_subset"]
+    base = bank.numpy().astype("float32")          # ADDITIVE: keep everything
+    existing_rad = sum(1 for m in metas if m.get("source") == "radiology")
+    target = rcfg["radiology_subset"]
     thumb = rcfg["thumb_size"]
-    print(f"[radiology] Adding {n} ROCOv2 radiology images to the bank...")
-    ds = load_dataset(rcfg["radiology_dataset"], split="train", streaming=True)
-    imgs, new_metas, seen = [], [], set()
-    for ex in ds:
-        cap = (ex.get("caption") or "").strip()
-        if not cap:
-            continue
-        h = _img_hash(ex["image"])
-        if h in seen:
-            continue
-        seen.add(h)
-        idx = start + len(imgs)
-        rel = f"rad_{idx:05d}.jpg"
-        thumb_img = ex["image"].convert("RGB").resize((thumb, thumb))
-        thumb_img.save(bank_dir / rel, quality=85)
-        imgs.append(thumb_img)
-        new_metas.append({"file": rel, "question": cap[:80],
-                          "answer": "radiology", "source": "radiology"})
-        if len(imgs) >= n:
+    need = target - existing_rad
+    if need <= 0:
+        print(f"[radiology] already have {existing_rad} (target {target}) — nothing to do.")
+        return
+    print(f"[radiology] have {existing_rad}; adding up to {need} more (target {target}). "
+          "Checkpointed + retry-safe.")
+
+    new_embs, new_metas, buf, CKPT = [], [], [], 1500
+
+    def flush():
+        if buf:
+            e = encode_images(model, preprocess, device, buf).numpy().astype("float32")
+            new_embs.append(e); buf.clear()
+
+    def save():
+        flush()
+        if not new_metas:
+            return
+        combined = np.concatenate([base] + new_embs, axis=0)
+        np.savez_compressed(emb_file, embeddings=combined)
+        with open(meta_file, "w", encoding="utf-8") as f:
+            json.dump(metas + new_metas, f)
+        print(f"  [checkpoint] radiology +{len(new_metas)} (bank now {combined.shape[0]})")
+
+    for attempt in range(6):
+        try:
+            ds = load_dataset(rcfg["radiology_dataset"], split="train", streaming=True)
+            got = 0                     # count of caption-bearing rows seen this stream
+            for ex in ds:
+                cap = (ex.get("caption") or "").strip()
+                if not cap:
+                    continue
+                got += 1
+                # resume: skip rows already ingested (prior runs + this run)
+                if got <= existing_rad + len(new_metas):
+                    continue
+                idx = len(metas) + len(new_metas)
+                rel = f"rad_{idx:05d}.jpg"
+                t = ex["image"].convert("RGB").resize((thumb, thumb))
+                t.save(bank_dir / rel, quality=85)
+                buf.append(t)
+                new_metas.append({"file": rel, "question": " ".join(cap.split())[:300],
+                                  "answer": "radiology", "source": "radiology"})
+                if len(buf) >= 32:
+                    flush()
+                if len(new_metas) % CKPT == 0:
+                    save()
+                if len(new_metas) >= need:
+                    break
+            break                        # stream finished cleanly
+        except Exception as e:           # ROCO CDN can drop; retry, keep progress
+            print(f"[radiology] stream error: {str(e)[:80]} — retry {attempt+1}/6, "
+                  f"kept {len(new_metas)}")
+            save()
+    save()
+    print(f"[radiology] done. radiology total now {existing_rad + len(new_metas)}.")
+
+
+# generic non-radiology sources (dermatology, extra brain MRI, …). Each is
+# additive + checkpointed + retry-safe, tagged with its own source for provenance.
+_HAM = {"mel": "melanoma", "nv": "melanocytic nevus", "bcc": "basal cell carcinoma",
+        "akiec": "actinic keratosis / Bowen's disease", "bkl": "benign keratosis",
+        "df": "dermatofibroma", "vasc": "vascular lesion"}
+
+EXTRA_SOURCES = [
+    {"dataset": "marmal88/skin_cancer", "source": "derm", "add": 6000,
+     "cap_field": "dx", "cap_map": _HAM, "template": "dermatology skin lesion, {}"},
+    {"dataset": "Falah/Alzheimer_MRI", "source": "brainmri", "add": 4000,
+     "cap_field": "label", "template": "brain MRI scan, {} (dementia screening)"},
+    {"dataset": "AbishekFranklin/medai-vision-dataset-hair_scalp_conditions",
+     "source": "hair", "add": 3000, "cap_field": "label",
+     "template": "dermatology — hair and scalp condition: {}"},
+    {"dataset": "Hemg/bone-fracture-detection", "source": "bone", "add": 4000,
+     "cap_field": "label", "template": "skeletal X-ray, bone / fracture: {}"},
+]
+
+
+def add_source(cfg, spec):
+    """Additive + checkpointed + retry ingest of one image dataset into the bank."""
+    from datasets import load_dataset
+
+    rcfg = cfg["retrieval"]
+    bank_dir, emb_file, meta_file = _bank_paths(cfg)
+    model, preprocess, tokenizer, device = load_biomedclip(rcfg["clip_model"])
+    bank, metas = load_bank(cfg)
+    base = bank.numpy().astype("float32")
+    src = spec["source"]
+    existing = sum(1 for m in metas if m.get("source") == src)
+    need = spec["add"] - existing
+    if need <= 0:
+        print(f"[{src}] already have {existing}; skip."); return
+    thumb = rcfg["thumb_size"]
+    label_names = None
+    print(f"[{src}] adding up to {need} from {spec['dataset']} (checkpointed)...")
+
+    new_embs, new_metas, buf, CKPT = [], [], [], 1000
+
+    def flush():
+        if buf:
+            new_embs.append(encode_images(model, preprocess, device, buf)
+                            .numpy().astype("float32")); buf.clear()
+
+    def save():
+        flush()
+        if not new_metas:
+            return
+        combined = np.concatenate([base] + new_embs, axis=0)
+        np.savez_compressed(emb_file, embeddings=combined)
+        with open(meta_file, "w", encoding="utf-8") as f:
+            json.dump(metas + new_metas, f)
+        print(f"  [checkpoint] {src} +{len(new_metas)} (bank {combined.shape[0]})")
+
+    def caption(ex):
+        v = ex.get(spec["cap_field"])
+        if spec.get("cap_map"):
+            v = spec["cap_map"].get(str(v).lower(), str(v))
+        elif label_names is not None and isinstance(v, int):
+            v = label_names[v]
+        return spec.get("template", "{}").format(str(v).replace("_", " ").strip())
+
+    for attempt in range(6):
+        try:
+            ds = load_dataset(spec["dataset"], split="train", streaming=True)
+            try:
+                label_names = ds.features[spec["cap_field"]].names
+            except Exception:
+                label_names = None
+            got = 0
+            for ex in ds:
+                got += 1
+                if got <= existing + len(new_metas):
+                    continue
+                idx = len(metas) + len(new_metas)
+                rel = f"{src}_{idx:05d}.jpg"
+                ex["image"].convert("RGB").resize((thumb, thumb)).save(bank_dir / rel, quality=85)
+                buf.append(Image.open(bank_dir / rel).convert("RGB"))
+                new_metas.append({"file": rel, "question": caption(ex),
+                                  "answer": src, "source": src})
+                if len(buf) >= 32:
+                    flush()
+                if len(new_metas) % CKPT == 0:
+                    save()
+                if len(new_metas) >= need:
+                    break
             break
+        except Exception as e:
+            print(f"[{src}] stream error: {str(e)[:70]} — retry {attempt+1}/6")
+            save()
+    save()
+    print(f"[{src}] done. total {src} now {existing + len(new_metas)}.")
 
-    print(f"[radiology] Embedding {len(imgs)} radiology images (CPU)...")
-    embs, B = [], 32
-    for i in range(0, len(imgs), B):
-        embs.append(encode_images(model, preprocess, device, imgs[i:i + B]))
-        print(f"  {min(i+B, len(imgs))}/{len(imgs)}", end="\r")
-    print()
-    rad_embs = torch.cat(embs).numpy().astype("float32")
 
-    combined = np.concatenate([bank.numpy().astype("float32"), rad_embs], axis=0)
-    metas = metas + new_metas
-    np.savez_compressed(emb_file, embeddings=combined)
-    with open(meta_file, "w", encoding="utf-8") as f:
-        json.dump(metas, f)
-    print(f"[radiology] Bank now {combined.shape[0]} images "
-          f"({start} pathology + {len(imgs)} radiology)")
+def expand_all(cfg):
+    """Grow the bank across ALL fields: top up radiology, then add each extra
+    source (dermatology, brain MRI, …). Sequential (one bank writer at a time)."""
+    from PIL import Image  # noqa: F401  (used inside add_source)
+    prepare_radiology(cfg)
+    for spec in EXTRA_SOURCES:
+        add_source(cfg, spec)
+    _bank_dir, _, meta_file = _bank_paths(cfg)
+    import collections
+    metas = json.loads(meta_file.read_text(encoding="utf-8"))
+    print("[expand] FINAL bank:", len(metas),
+          dict(collections.Counter(m.get("source", "pathology") for m in metas)))
 
 
 def prepare_chestxray(cfg):
@@ -210,6 +336,42 @@ def prepare_chestxray(cfg):
     with open(meta_file, "w", encoding="utf-8") as f:
         json.dump(metas, f)
     print(f"[chest] Bank now {combined.shape[0]} images (+{len(imgs)} chest X-rays)")
+
+
+def repair_radiology_captions(cfg):
+    """Restore FULL ROCO captions (they were stored at 80 chars) WITHOUT
+    re-embedding — re-stream in the same order and overwrite meta text only."""
+    from datasets import load_dataset
+
+    _, emb_file, meta_file = _bank_paths(cfg)
+    with open(meta_file, encoding="utf-8") as f:
+        metas = json.load(f)
+    rad_idx = [i for i, m in enumerate(metas) if m.get("source") == "radiology"]
+    if not rad_idx:
+        print("[repair] no radiology rows."); return
+    print(f"[repair] restoring captions for {len(rad_idx)} radiology images...")
+
+    rcfg = cfg["retrieval"]
+    ds = load_dataset(rcfg["radiology_dataset"], split="train", streaming=True)
+    seen, caps = set(), []
+    for ex in ds:
+        cap = (ex.get("caption") or "").strip()
+        if not cap:
+            continue
+        h = _img_hash(ex["image"])
+        if h in seen:
+            continue
+        seen.add(h)
+        caps.append(" ".join(cap.split())[:300])
+        if len(caps) >= len(rad_idx):
+            break
+
+    n = min(len(caps), len(rad_idx))
+    for j in range(n):
+        metas[rad_idx[j]]["question"] = caps[j]
+    with open(meta_file, "w", encoding="utf-8") as f:
+        json.dump(metas, f)
+    print(f"[repair] updated {n} captions (no re-embedding). e.g. {caps[0][:90]}")
 
 
 def load_bank(cfg):
@@ -396,6 +558,9 @@ def main():
         return
     if arg == "chest":
         prepare_chestxray(cfg)
+        return
+    if arg == "expand":
+        expand_all(cfg)
         return
     if arg.startswith("query:"):
         for meta, score in query(cfg, arg[len("query:"):], topk=5):

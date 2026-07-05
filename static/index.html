@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MultiMedAI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<div class="dna" aria-hidden="true"></div>
+
+<div class="app">
+  <!-- ================= SIDEBAR ================= -->
+  <aside class="sidebar">
+    <div class="side-brand"><div class="logo">🧬</div><span>MultiMedAI</span></div>
+    <button id="new-chat" class="new-chat">＋ New chat</button>
+    <div class="side-label">Recent chats</div>
+    <div id="history" class="history"></div>
+    <nav class="side-nav">
+      <button class="nav-btn active" data-panel="chat">💬 Chat</button>
+      <button class="nav-btn" data-panel="about">ℹ️ About</button>
+      <button class="nav-btn" data-panel="feedback">✍️ Feedback</button>
+      <button class="nav-btn" data-panel="settings">⚙️ Settings</button>
+    </nav>
+    <div class="side-foot" id="side-status">loading…</div>
+  </aside>
+
+  <!-- ================= MAIN ================= -->
+  <main class="main">
+    <!-- CHAT PANEL -->
+    <section class="panel active" data-panel="chat">
+      <header class="bar-top">
+        <div>
+          <div class="title" id="chat-title">New chat</div>
+          <div class="subtitle">Medical image search · analysis · document RAG · literature</div>
+        </div>
+        <div class="chip">Educational · not a diagnosis</div>
+      </header>
+      <div id="chat" class="chat"></div>
+      <div class="composer">
+        <div id="attach-chip" class="attach-chip" hidden></div>
+        <div id="doc-status" class="doc-status" hidden></div>
+        <div class="bar">
+          <button id="btn-attach" class="icon" title="Attach image">📎</button>
+          <button id="btn-doc" class="icon" title="Upload document (PDF/TXT)">📄</button>
+          <textarea id="input" rows="1" placeholder="Ask MultiMedAI…  e.g. “show brain MRI”, “research papers on TB”, “what is a glioma?”"></textarea>
+          <button id="btn-send" class="send" title="Send">➤</button>
+        </div>
+        <input type="file" id="file-img" accept="image/*" hidden />
+        <input type="file" id="file-doc" accept=".pdf,.txt" hidden />
+      </div>
+    </section>
+
+    <!-- ABOUT PANEL -->
+    <section class="panel" data-panel="about">
+      <div class="doc-page">
+        <h1>About MultiMedAI</h1>
+        <p>An <b>educational &amp; research</b> assistant for medical imaging and
+        literature — built on free, open models. <b>Not a medical device;
+        not a diagnosis.</b></p>
+        <h2>What it does</h2>
+        <ul>
+          <li><b>Image search</b> — retrieves real images from ~6,800 open cases (pathology + radiology + chest disease).</li>
+          <li><b>Image analysis</b> — vision-model narration + trained chest finding classifier (~94%) + explainable reasoning.</li>
+          <li><b>Region highlight</b> — Grad-CAM attention (indicative only).</li>
+          <li><b>Document RAG</b> — upload a paper/thesis, get page-cited answers &amp; reports.</li>
+          <li><b>Knowledge base</b> — answers grounded in 8,192 PubMed passages.</li>
+          <li><b>Literature</b> — live PubMed + Google Scholar links for evidence.</li>
+        </ul>
+        <h2>Models (all free / open)</h2>
+        <ul>
+          <li><b>BiomedCLIP</b> — retrieval, modality &amp; finding features</li>
+          <li><b>Gemini 2.0 Flash</b> (if key set) or <b>Qwen2.5 / moondream</b> local fallback</li>
+          <li><b>MiniLM</b> — document &amp; KB embeddings · <b>SD-Turbo</b> — synthesis (experimental)</li>
+        </ul>
+        <h2>Honest limits</h2>
+        <ul>
+          <li>Outputs are educational, never diagnostic.</li>
+          <li>Region highlighting is model-attention, not a validated detector.</li>
+          <li>Generated images are synthetic, not real scans.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- FEEDBACK PANEL -->
+    <section class="panel" data-panel="feedback">
+      <div class="doc-page">
+        <h1>Feedback</h1>
+        <p>Tell us what worked, what didn't, or what to add. Stored locally for review.</p>
+        <textarea id="fb-text" class="fb" rows="6" placeholder="Your feedback…"></textarea>
+        <button id="fb-send" class="primary">Send feedback</button>
+        <div id="fb-status" class="muted"></div>
+      </div>
+    </section>
+
+    <!-- SETTINGS PANEL -->
+    <section class="panel" data-panel="settings">
+      <div class="doc-page">
+        <h1>Settings</h1>
+        <h2>⚡ Gemini API key (faster responses)</h2>
+        <p class="muted">Free key from <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a>.
+        With a key, responses use Gemini (fast); without it, the local CPU model (slower). Stored locally, never committed.</p>
+        <div class="row">
+          <input type="password" id="gem-key" class="txt" placeholder="AIza…" />
+          <button id="gem-save" class="primary">Verify &amp; save</button>
+        </div>
+        <div id="gem-status" class="muted"></div>
+        <h2>Options</h2>
+        <label class="opt"><input type="checkbox" id="allow-gen" /> Allow image generation (synthetic, slow on CPU)</label>
+        <label class="opt"><input type="checkbox" id="use-scholar" /> Include Google Scholar in research (uses limited SerpApi quota)</label>
+      </div>
+    </section>
+  </main>
+
+  <!-- ================= REPORT PREVIEW DRAWER (right) ================= -->
+  <aside id="preview" class="preview">
+    <div class="preview-head">
+      <span>📄 Report preview</span>
+      <div>
+        <a id="preview-dl" class="mini" href="#" download>⬇ Download PDF</a>
+        <button id="preview-close" class="mini">✕</button>
+      </div>
+    </div>
+    <div id="preview-body" class="preview-body"></div>
+  </aside>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>

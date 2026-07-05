@@ -31,6 +31,15 @@ def _load(model_id):
 
 @torch.no_grad()
 def chat(cfg, system, user, max_new_tokens=None):
+    # Prefer the fast cloud model (Gemini) if a key is set; fall back to local
+    # Qwen on any error (rate limit, offline, etc.).
+    from src import cloudllm
+    if cloudllm.available():
+        try:
+            return cloudllm.text(system, user,
+                                 max_new_tokens or cfg["llm"]["max_new_tokens"])
+        except Exception:
+            pass
     tok, model, device = _load(cfg["llm"]["model_id"])
     mnt = max_new_tokens or cfg["llm"]["max_new_tokens"]
     messages = [{"role": "system", "content": system},
@@ -75,15 +84,115 @@ def compose_report(cfg, caption, vqa_answer=None, concepts=None):
 
 
 def answer_question(cfg, question):
-    """Clinical educational explanation of a concept (e.g. 'what is a glioma?')."""
+    """Clinical educational explanation of a concept (e.g. 'what is a glioma?').
+    One-shot prompted for a consistent, well-structured, non-truncated answer."""
     system = (
         "You are MultiMedAI, a medical education assistant for students and "
-        "clinicians. Explain the concept accurately using correct medical "
-        "terminology, structured in Markdown: a one-line **definition**, then 2–4 "
-        "concise bullets (e.g. pathophysiology, key features, clinical relevance). "
-        "Be factual and neutral. This is educational information, not medical advice."
+        "clinicians. INSTRUCTIONS: (1) Use correct medical terminology and stay "
+        "factual. (2) Follow the EXACT Markdown format shown in the examples: a "
+        "one-line **Definition**, 2–4 concise bullets, then a one-line **Clinical "
+        "relevance**. (3) Always finish your sentences — do not stop mid-word. "
+        "(4) If unsure, say so. Educational only, not medical advice. Study the "
+        "examples, then answer the final question in the same style."
     )
-    return chat(cfg, system, question, max_new_tokens=260)
+    # FEW-SHOT exemplars (2) to lock format, depth, and terminology
+    fewshot = (
+        "Q: What is a glioma?\n"
+        "**Definition:** A glioma is a primary CNS tumour arising from glial cells "
+        "(astrocytes, oligodendrocytes, or ependymal cells).\n"
+        "- **Grading:** WHO grade I–IV; glioblastoma (IV) is the most aggressive.\n"
+        "- **Imaging:** Typically T2/FLAIR-hyperintense with variable enhancement and "
+        "surrounding vasogenic oedema.\n"
+        "- **Presentation:** Headache, seizures, or focal neurological deficits.\n"
+        "**Clinical relevance:** Grade drives prognosis and combined surgery / "
+        "radiotherapy / chemotherapy (e.g. temozolomide).\n\n"
+        "Q: What is a pneumothorax?\n"
+        "**Definition:** A pneumothorax is air in the pleural space causing partial "
+        "or complete lung collapse.\n"
+        "- **Types:** Spontaneous, traumatic, or tension (a medical emergency).\n"
+        "- **Imaging:** CXR shows a visceral pleural line with absent lung markings "
+        "peripherally; tension causes mediastinal shift.\n"
+        "- **Presentation:** Sudden pleuritic chest pain and dyspnoea.\n"
+        "**Clinical relevance:** Tension pneumothorax needs immediate needle "
+        "decompression; small ones may be observed."
+    )
+    user = f"{fewshot}\n\nQ: {question}"
+    return chat(cfg, system, user, max_new_tokens=340)
+
+
+def explain_image(cfg, modality, narration, finding=None, finding_conf=None,
+                  evidence=None):
+    """EXPLAINABILITY: synthesize a grounded, reasoned read of an image from the
+    structured signals (modality, trained finding, vision narration, similar
+    real cases) — WITHOUT dumping raw captions. Explains *why*, as considerations."""
+    obs = [f"Detected modality: {modality}.",
+           f"Vision-model narration: {narration}"]
+    if finding:
+        obs.append(f"Trained classifier suggests: {finding}"
+                   + (f" (confidence {finding_conf:.0%})." if finding_conf else "."))
+    if evidence:
+        obs.append("Similar confirmed cases in the library describe: "
+                   + "; ".join(evidence) + ".")
+    system = (
+        "You are MultiMedAI, a clinical imaging assistant that gives EXPLAINABLE "
+        "reads. INSTRUCTIONS: (1) Base everything ONLY on the given observations — "
+        "never invent findings. (2) Output EXACTLY this Markdown structure, as in the "
+        "examples:\n"
+        "**Assessment:** one sentence naming the most likely category as a "
+        "*consideration* (not a diagnosis).\n"
+        "**Why (evidence):** 2–3 bullets, each tying a SPECIFIC visual feature or "
+        "signal (modality, trained finding, similar cases) to the assessment.\n"
+        "**Caveats:** one bullet on what is needed to confirm.\n"
+        "(3) Use precise radiological terminology and finish every sentence."
+    )
+    # FEW-SHOT exemplars showing the reasoning style (not raw captions)
+    fewshot = (
+        "Observations:\n- Detected modality: chest X-ray.\n- Trained classifier "
+        "suggests: tuberculosis (confidence 88%).\n- Vision narration: upper-zone "
+        "opacity with possible cavitation.\n"
+        "→\n**Assessment:** Findings are most consistent with pulmonary tuberculosis "
+        "(consideration).\n**Why (evidence):**\n- Upper-lobe predilection and "
+        "cavitation are classic for reactivation TB.\n- The trained chest classifier "
+        "supports TB at high confidence (88%).\n**Caveats:**\n- Confirm with sputum "
+        "AFB / culture or NAAT; imaging alone is not diagnostic.\n\n"
+        "Observations:\n- Detected modality: brain MRI.\n- Vision narration: "
+        "well-demarcated T2-hyperintense mass with peritumoral oedema.\n- Similar "
+        "cases describe: enhancing intra-axial mass.\n"
+        "→\n**Assessment:** A neoplastic intra-axial mass (e.g. glioma) is the "
+        "leading consideration.\n**Why (evidence):**\n- A well-demarcated "
+        "T2-hyperintense mass with surrounding vasogenic oedema fits a tumour.\n- "
+        "Similar library cases show comparable enhancing intra-axial masses.\n"
+        "**Caveats:**\n- Contrast sequences and histopathology are needed to "
+        "characterise and grade it."
+    )
+    user = fewshot + "\n\nObservations:\n" + "\n".join(f"- {o}" for o in obs) + "\n→"
+    return chat(cfg, system, user, max_new_tokens=340)
+
+
+def answer_detailed(cfg, question, passages=None, context=""):
+    """A COMPREHENSIVE, multi-section answer (for 'give a detailed report/summary').
+    Grounded in passages when provided; otherwise educational. Longer output."""
+    ctx = f"Conversation so far: {context}\n\n" if context else ""
+    if passages:
+        src = "\n\n".join(f"[p{p['page']}] {p['text']}" for p in passages)
+        system = (
+            "You are a medical research assistant. Write a DETAILED, well-structured "
+            "report grounded ONLY in the passages, using Markdown section headers "
+            "(**Overview**, **Key Findings**, **Mechanisms/Details**, **Metrics & "
+            "Dosages**, **Clinical Implications**, **Limitations**). Cite pages like "
+            "(p.3). Be thorough but never invent facts not in the passages."
+        )
+        user = f"{ctx}Sources:\n{src}\n\nWrite a detailed report on: {question}"
+    else:
+        system = (
+            "You are a medical education assistant. Write a DETAILED, comprehensive, "
+            "well-structured explanation in Markdown with clear section headers and "
+            "bullet points (definition, pathophysiology, subtypes/grading, imaging "
+            "features, clinical presentation, diagnosis, management, prognosis where "
+            "relevant). Use correct terminology, finish every sentence. Educational only."
+        )
+        user = f"{ctx}Give a detailed, multi-section explanation of: {question}"
+    return chat(cfg, system, user, max_new_tokens=900)
 
 
 def answer_document(cfg, question, passages):

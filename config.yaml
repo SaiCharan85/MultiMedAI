@@ -20,8 +20,11 @@ synthesis:
   model_id: stabilityai/sd-turbo
   weights_subdir: sdturbo
   image_size: 512          # SD-Turbo native
-  num_inference_steps: 3   # turbo: 1-4 steps is enough
-  guidance_scale: 0.0      # turbo requires CFG off
+  num_inference_steps: 6   # a few more steps for detail/adherence
+  guidance_scale: 1.6      # low CFG (not 0) -> follows the prompt, less stylized
+  # realism steering (reduces the "hyper-stylized" look the user flagged)
+  style_suffix: "realistic clinical medical photograph, documentary, natural detail, neutral"
+  negative_prompt: "cartoon, illustration, painting, drawing, stylized, artistic, abstract, oversaturated, neon, 3d render"
   num_images: 4            # how many to generate for the demo / FID set
   prompts:
     - "a chest x-ray, frontal view, grayscale radiograph"
@@ -68,7 +71,7 @@ retrieval:
   # RADIOLOGY source (ROCOv2): real chest X-ray / CT / MRI / brain images +
   # captions, appended to the pathology bank so chest/brain queries have hits.
   radiology_dataset: eltorio/ROCOv2-radiology
-  radiology_subset: 3000
+  radiology_subset: 60000   # ~all of ROCO -> broad multi-organ coverage (~80k total bank)
   # Chest-disease X-rays (streamed subset -> small storage). TB + COVID + Pneumonia.
   chest_dataset: DevVoyageR007/classify_Pneumonia_Tuberculosis_and_Normal__Non_Xray_chest_Xray_images
   chest_per_class: 400

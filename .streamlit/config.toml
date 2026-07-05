@@ -1,0 +1,12 @@
+# Native Streamlit theme — applied server-side, so it always takes effect
+# (independent of any injected <style>, which some Streamlit builds sanitize).
+[theme]
+base = "dark"
+primaryColor = "#14b8a6"
+backgroundColor = "#0b1020"
+secondaryBackgroundColor = "#141c33"
+textColor = "#eaf0fb"
+font = "sans serif"
+
+[server]
+headless = true

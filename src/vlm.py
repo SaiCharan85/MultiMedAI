@@ -36,8 +36,6 @@ DEFAULT_Q = (
 
 
 def describe(pil_image, question: str | None = None) -> str:
-    model, tok = _load()
-    enc = model.encode_image(pil_image.convert("RGB"))
     q = (question or "").strip()
     if not q:
         q = DEFAULT_Q
@@ -45,4 +43,13 @@ def describe(pil_image, question: str | None = None) -> str:
         # steer a user's free-form question toward a technical clinical answer
         q = (q + " Answer technically, using precise medical/radiological "
              "terminology and specifying location and morphology.")
+    # Prefer fast cloud vision (Gemini) if a key is set; fall back to local moondream.
+    from src import cloudllm
+    if cloudllm.available():
+        try:
+            return cloudllm.vision(pil_image, q)
+        except Exception:
+            pass
+    model, tok = _load()
+    enc = model.encode_image(pil_image.convert("RGB"))
     return model.answer_question(enc, q, tok).strip()

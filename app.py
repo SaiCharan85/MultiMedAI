@@ -326,9 +326,15 @@ def do_generate(prompt):
     lp = engine.lora_path(cfg)
     if lp:
         pipe.load_lora_weights(str(lp.parent))
-    return pipe(prompt, num_inference_steps=scfg["num_inference_steps"],
-                guidance_scale=scfg["guidance_scale"],
-                height=scfg["image_size"], width=scfg["image_size"]).images[0]
+    # realism steering: append a clinical-photo suffix + use a negative prompt so
+    # the image follows the request and isn't hyper-stylized
+    full = f"{prompt}, {scfg.get('style_suffix', '')}".strip(", ")
+    kw = dict(num_inference_steps=scfg["num_inference_steps"],
+              guidance_scale=scfg["guidance_scale"],
+              height=scfg["image_size"], width=scfg["image_size"])
+    if scfg.get("guidance_scale", 0) > 1 and scfg.get("negative_prompt"):
+        kw["negative_prompt"] = scfg["negative_prompt"]
+    return pipe(full, **kw).images[0]
 
 
 # ============================ sidebar ======================================
@@ -601,6 +607,27 @@ if prompt:
                                "LLM's general (offline, possibly dated) knowledge, not "
                                "grounded in a source. Not a diagnosis.")
 
+        elif intent == "locate":
+            # circle + label a region ("where is the tumor?") via Grad-CAM attention
+            target = engine.extract_target(prompt)
+            with st.spinner(f"Locating “{target}” (model-attention heatmap)…"):
+                from src import annotate as _annot
+                annotated, found = _annot.annotate(user_img, target)
+                gen_path = resolve(cfg["paths"]["outputs"], "synthesis", "annotated.png")
+                annotated.save(gen_path)
+            if found:
+                st.image(annotated, caption=f"Attention heatmap for “{target}”", width=340)
+                text = (f"Highlighted where the model most associates **“{target}”** "
+                        "(red heatmap + circle on the peak region).")
+                imgs_payload.append((str(gen_path), f"attention: {target}"))
+            else:
+                text = (f"I couldn't compute a reliable attention map for “{target}” "
+                        "on this image.")
+            st.markdown(text)
+            st.caption("⚠️ This is a **model-attention (Grad-CAM) heatmap** showing where "
+                       "BiomedCLIP looks for that concept — it is **indicative only, NOT a "
+                       "validated lesion detector, segmentation, or diagnosis.**")
+
         elif intent in ("vqa", "report"):
             # analyze the ACTIVE image (uploaded OR grabbed from results)
             with st.spinner("Analyzing the image with the vision model… (~1 min on CPU)"):
@@ -629,8 +656,11 @@ if prompt:
                 text += ("🩻 _Automated finding detection **inconclusive** (near-chance "
                          "for this modality — no trained classifier yet). See real cases.*\n\n")
             if neigh_caps:
+                def _wt(s):  # trim at a word boundary so captions don't cut mid-word
+                    s = s.strip()
+                    return s if len(s) <= 96 else s[:96].rsplit(" ", 1)[0] + "…"
                 text += "📚 _Most similar REAL cases in the library:_\n" + "\n".join(
-                    f"- “{c[:70]}”" for c in neigh_caps[:3])
+                    f"- “{_wt(c)}”" for c in neigh_caps[:3])
             text += ("\n\n_Narration by a general-domain vision model (moondream) — detailed "
                      "but **not medically validated** and may err. The trained finding "
                      "(where shown) and cited real cases are the reliable signals. "

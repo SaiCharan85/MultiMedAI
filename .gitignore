@@ -25,6 +25,13 @@ __pycache__/
 .cache/
 hf_cache/
 
+# secrets / API keys — NEVER commit
+.keys.json
+.env
+*.key
+.gemini_key
+.serpapi_key
+
 # OS / editor
 .DS_Store
 Thumbs.db
