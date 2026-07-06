@@ -4,6 +4,11 @@
 seed: 42
 device: cpu          # HARD constraint: AMD/Windows has no usable torch GPU path.
 
+# request-based access to restricted (explicit / minors) clinical images
+access:
+  email: access@multimedai.example      # CHANGE to your real intake address
+  form_url: ""                          # optional: external form (Google Form, etc.)
+
 paths:
   data: data
   weights: weights
@@ -20,11 +25,11 @@ synthesis:
   model_id: stabilityai/sd-turbo
   weights_subdir: sdturbo
   image_size: 512          # SD-Turbo native
-  num_inference_steps: 6   # a few more steps for detail/adherence
-  guidance_scale: 1.6      # low CFG (not 0) -> follows the prompt, less stylized
-  # realism steering (reduces the "hyper-stylized" look the user flagged)
-  style_suffix: "realistic clinical medical photograph, documentary, natural detail, neutral"
-  negative_prompt: "cartoon, illustration, painting, drawing, stylized, artistic, abstract, oversaturated, neon, 3d render"
+  num_inference_steps: 8   # more steps -> more detail/coherence
+  guidance_scale: 2.0      # a bit more prompt adherence
+  # steer toward a clean anatomical-illustration look (not cartoon, no tiled bg)
+  style_suffix: "detailed medical illustration, anatomical textbook style, clean plain white background, realistic proportions, high detail, sharp"
+  negative_prompt: "cartoon, childish, distorted, deformed, extra limbs, duplicated, tiled, dotted background, patterned background, text, letters, watermark, blurry, low quality, oversaturated, neon, meme"
   num_images: 4            # how many to generate for the demo / FID set
   prompts:
     - "a chest x-ray, frontal view, grayscale radiograph"

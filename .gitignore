@@ -41,3 +41,12 @@ Thumbs.db
 # allow small committed sample outputs
 !outputs/
 !outputs/**
+
+# but NOT runtime-generated artifacts (test reports, generated imgs, request logs)
+outputs/web/*.png
+outputs/web/*.pdf
+outputs/web/*.log
+outputs/web/credentials/
+
+# local agent/session state
+.claude/

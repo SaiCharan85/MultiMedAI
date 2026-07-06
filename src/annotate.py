@@ -67,6 +67,76 @@ def _draw_boxes(base, boxes, label):
     return img
 
 
+def legend(pil_image, subject: str) -> str:
+    """A cleaner labelling approach: instead of drawing (unreliable) boxes on a
+    synthetic image, return a Markdown NUMBERED LEGEND of the visible structures
+    with their approximate positions described in words. One Gemini call."""
+    from src import cloudllm
+    if not cloudllm.available():
+        return ""
+    prompt = (
+        f"This image relates to: {subject}. Produce a concise **numbered legend** of "
+        "the main anatomical structures that are actually visible. For each: the "
+        "**bold structure name** + its approximate location in words "
+        "(e.g. anterior / superior / posterior / lateral / central). Markdown "
+        "numbered list, max 6 items, distinct structures only. No preamble. "
+        "Write ALL labels and text in ENGLISH ONLY.")
+    try:
+        return cloudllm.vision(pil_image, prompt, max_tokens=450)
+    except Exception:
+        return ""
+
+
+def label_anatomy(pil_image, subject: str):
+    """Draw REAL text labels on an image by asking Gemini to name + locate the key
+    structures, then rendering labels + leader dots with PIL (diffusion can't write
+    legible text itself). Returns (labeled_image, n_labels)."""
+    from src import cloudllm
+    base = pil_image.convert("RGB")
+    if not cloudllm.available():
+        return base, 0
+    prompt = (
+        f"This image depicts: {subject}. Identify the main anatomical structures "
+        "visible. Return ONLY a JSON array (max 8) of objects "
+        '{"label": "<short structure name>", "box": [ymin,xmin,ymax,xmax]} with '
+        "coordinates normalized 0-1000 (top-left origin). JSON only, no prose. "
+        "Every label MUST be in ENGLISH ONLY.")
+    try:
+        txt = cloudllm.vision(base, prompt, max_tokens=400)
+    except Exception:
+        return base, 0
+    m = re.search(r"\[.*\]", txt, re.S)
+    if not m:
+        return base, 0
+    try:
+        items = json.loads(m.group(0))
+    except Exception:
+        return base, 0
+
+    W, H = base.size
+    img = base.copy()
+    draw = ImageDraw.Draw(img)
+    n = 0
+    for it in items:
+        if not isinstance(it, dict) or "box" not in it or "label" not in it:
+            continue
+        b = it["box"]
+        if not (isinstance(b, (list, tuple)) and len(b) >= 4):
+            continue
+        cy = (b[0] + b[2]) / 2 / 1000 * H
+        cx = (b[1] + b[3]) / 2 / 1000 * W
+        lab = str(it["label"])[:26]
+        r = max(3, W // 150)
+        draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(255, 60, 60))
+        tw = 7 * len(lab) + 8
+        tx = min(max(0, cx + 8), W - tw)
+        ty = min(max(0, cy - 8), H - 16)
+        draw.rectangle([tx, ty, tx + tw, ty + 15], fill=(15, 30, 60))
+        draw.text((tx + 4, ty + 2), lab, fill=(255, 255, 255))
+        n += 1
+    return img, n
+
+
 # --------------------------------------------------------------------------- Grad-CAM (fallback)
 def _gradcam_map(query, pil_image):
     import torch

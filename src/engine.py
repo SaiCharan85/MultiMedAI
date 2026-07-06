@@ -42,22 +42,41 @@ def detect_intent(message: str, has_image: bool) -> str:
     """
     m = (message or "").lower().strip()
 
-    # 1) explicit image generation
-    if any(w in m for w in ("generate", "synthesize", "synthesise",
-                            "create an image", "make an image", "draw")):
+    # 1) explicit image GENERATION — must ask for an image/picture (not a "report"),
+    #    so "generate a report" is NOT treated as image generation.
+    gen_verb = any(v in m for v in ("generate", "create", "make", "synthes", "draw", "render"))
+    gen_noun = any(n in m for n in ("image", "picture", "photo", "illustration",
+                                    "diagram", "drawing", "render", "visual", "artwork"))
+    if gen_verb and gen_noun and "report" not in m:
         return "generate"
 
-    # 2) an ACTIVE image (uploaded OR grabbed from results) + text -> analyze it
+    # 2) an ACTIVE image (uploaded OR grabbed) — analyze it ONLY when the message
+    #    is about the image; a general/research question shouldn't be hijacked
+    #    just because an image is still attached (sticky) from a prior turn.
     report_words = ("describe", "caption", "report", "findings", "summary")
     locate_words = ("where is", "where's", "where are", "locate", "circle", "mark",
                     "highlight", "point to", "point out", "label", "which part",
                     "show the location", "annotate")
-    if has_image:
+    # a research request should win even with an image attached
+    is_research_msg = any(k in m for k in (
+        "research paper", "find papers", "papers on", "papers about", "studies on",
+        "literature", "pubmed", "scholar", "citations", "references for"))
+    if has_image and not is_research_msg:
         if any(w in m for w in locate_words):
-            return "locate"   # circle + label a region ("where is the tumor?")
+            return "locate"
         if any(w in m for w in report_words):
             return "report"
-        return "vqa"          # "explain this", "is it a tumor?", "what diagnosis?"
+        # DEFAULT with an image = analyze it. Only a standalone concept/definition
+        # question that clearly ISN'T about this image falls through to text.
+        concept_only = (m.startswith(("what is ", "what are ", "what's ", "define ",
+                        "explain the term", "explain the concept"))
+                        and not any(w in m for w in (
+                            "this", "that", " it", "it ", "here", "shown", "above",
+                            "happening", "wrong", "severe", "severity", "stage", "grade",
+                            "condition", "infection", "the image", "the scan",
+                            "the lesion", "the mass", "in this", "in here")))
+        if not concept_only:
+            return "vqa"      # "how severe is this?", "what's happening?", "explain in detail"
 
     # 3) RESEARCH: explicit request for papers/evidence/literature
     research_kw = ("research paper", "research papers", "find papers", "research on",
@@ -103,6 +122,10 @@ _TYPO = {
     "hemmorrhage": "hemorrhage", "hemmorhage": "hemorrhage", "carsinoma": "carcinoma",
     "tuberculsis": "tuberculosis", "fracutre": "fracture", "leison": "lesion",
     "wht": "what", "wheer": "where", "reprot": "report", "docmuent": "document",
+    "genrate": "generate", "genarate": "generate", "gnerate": "generate",
+    "generte": "generate", "generatte": "generate", "labeeled": "labelled",
+    "labeled": "labelled", "labled": "labelled", "lableled": "labelled",
+    "diagrm": "diagram", "diagramm": "diagram", "anatmy": "anatomy",
 }
 
 

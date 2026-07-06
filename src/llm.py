@@ -83,9 +83,9 @@ def compose_report(cfg, caption, vqa_answer=None, concepts=None):
     return chat(cfg, SYSTEM, user, max_new_tokens=300)
 
 
-def answer_question(cfg, question):
+def answer_question(cfg, question, context=""):
     """Clinical educational explanation of a concept (e.g. 'what is a glioma?').
-    One-shot prompted for a consistent, well-structured, non-truncated answer."""
+    Few-shot prompted; `context` carries the recent conversation for follow-ups."""
     system = (
         "You are MultiMedAI, a medical education assistant for students and "
         "clinicians. INSTRUCTIONS: (1) Use correct medical terminology and stay "
@@ -116,8 +116,30 @@ def answer_question(cfg, question):
         "**Clinical relevance:** Tension pneumothorax needs immediate needle "
         "decompression; small ones may be observed."
     )
-    user = f"{fewshot}\n\nQ: {question}"
+    ctx = f"Recent conversation (for follow-up context): {context}\n\n" if context else ""
+    user = f"{fewshot}\n\n{ctx}Q: {question}"
     return chat(cfg, system, user, max_new_tokens=340)
+
+
+# shared explainable-read format (used by explain_image AND the single-call
+# Gemini-vision path in main.py, so both produce the same paragraph+points combo)
+EXPLAIN_INSTRUCTIONS = (
+    "You are MultiMedAI, a clinical imaging assistant that gives EXPLAINABLE reads. "
+    "INSTRUCTIONS: (1) Base everything ONLY on what is visible / the given signals — "
+    "never invent findings. (2) DESCRIBE THE IMAGE CONTENT — the anatomy shown and the "
+    "abnormal findings — and the likely DISEASE/AILMENT. Do NOT explain how the imaging "
+    "technology works: NO radiation physics, detectors, wavelengths, Tesla, pulse "
+    "sequences, or acquisition parameters. Name the modality in ONLY a few words. "
+    "(3) Output EXACTLY this Markdown structure (paragraph + points COMBO):\n"
+    "**Overview:** 1–2 sentences on what the image shows and the key abnormality.\n"
+    "**Findings:** 2–4 bullets describing the SPECIFIC things seen (location, size, "
+    "shape, density/signal, borders) — what is actually in this image.\n"
+    "**Likely condition:** the most probable disease/ailment as a *consideration* "
+    "(not a diagnosis), with a one-line rationale from the findings.\n"
+    "**Severity / next steps:** one bullet on apparent severity and what would confirm "
+    "it.\n"
+    "(4) Precise clinical terminology, tight bullets, finish every sentence."
+)
 
 
 def explain_image(cfg, modality, narration, finding=None, finding_conf=None,
@@ -133,37 +155,27 @@ def explain_image(cfg, modality, narration, finding=None, finding_conf=None,
     if evidence:
         obs.append("Similar confirmed cases in the library describe: "
                    + "; ".join(evidence) + ".")
-    system = (
-        "You are MultiMedAI, a clinical imaging assistant that gives EXPLAINABLE "
-        "reads. INSTRUCTIONS: (1) Base everything ONLY on the given observations — "
-        "never invent findings. (2) Output EXACTLY this Markdown structure, as in the "
-        "examples:\n"
-        "**Assessment:** one sentence naming the most likely category as a "
-        "*consideration* (not a diagnosis).\n"
-        "**Why (evidence):** 2–3 bullets, each tying a SPECIFIC visual feature or "
-        "signal (modality, trained finding, similar cases) to the assessment.\n"
-        "**Caveats:** one bullet on what is needed to confirm.\n"
-        "(3) Use precise radiological terminology and finish every sentence."
-    )
+    system = EXPLAIN_INSTRUCTIONS
     # FEW-SHOT exemplars showing the reasoning style (not raw captions)
     fewshot = (
         "Observations:\n- Detected modality: chest X-ray.\n- Trained classifier "
         "suggests: tuberculosis (confidence 88%).\n- Vision narration: upper-zone "
         "opacity with possible cavitation.\n"
-        "→\n**Assessment:** Findings are most consistent with pulmonary tuberculosis "
-        "(consideration).\n**Why (evidence):**\n- Upper-lobe predilection and "
-        "cavitation are classic for reactivation TB.\n- The trained chest classifier "
-        "supports TB at high confidence (88%).\n**Caveats:**\n- Confirm with sputum "
-        "AFB / culture or NAAT; imaging alone is not diagnostic.\n\n"
+        "→\n**Overview:** A chest radiograph showing upper-zone opacity with possible "
+        "cavitation.\n**Findings:**\n- Upper-lobe opacity with a lucent centre "
+        "(cavitation).\n- Distribution favours the apices.\n**Likely condition:** "
+        "Pulmonary tuberculosis (consideration) — apical cavitation is classic for "
+        "reactivation TB, supported by the trained classifier (88%).\n**Severity / "
+        "next steps:** Cavitation suggests active disease; confirm with sputum AFB / "
+        "culture or NAAT.\n\n"
         "Observations:\n- Detected modality: brain MRI.\n- Vision narration: "
-        "well-demarcated T2-hyperintense mass with peritumoral oedema.\n- Similar "
-        "cases describe: enhancing intra-axial mass.\n"
-        "→\n**Assessment:** A neoplastic intra-axial mass (e.g. glioma) is the "
-        "leading consideration.\n**Why (evidence):**\n- A well-demarcated "
-        "T2-hyperintense mass with surrounding vasogenic oedema fits a tumour.\n- "
-        "Similar library cases show comparable enhancing intra-axial masses.\n"
-        "**Caveats:**\n- Contrast sequences and histopathology are needed to "
-        "characterise and grade it."
+        "well-demarcated T2-hyperintense mass with peritumoral oedema.\n"
+        "→\n**Overview:** An axial brain MRI with a focal mass and surrounding oedema.\n"
+        "**Findings:**\n- Well-demarcated T2-hyperintense intra-axial mass.\n- "
+        "Peritumoral vasogenic oedema.\n**Likely condition:** A neoplastic mass such as "
+        "glioma (consideration) — morphology and oedema fit a tumour.\n**Severity / "
+        "next steps:** Mass effect possible; contrast sequences and histopathology "
+        "needed to grade it."
     )
     user = fewshot + "\n\nObservations:\n" + "\n".join(f"- {o}" for o in obs) + "\n→"
     return chat(cfg, system, user, max_new_tokens=340)

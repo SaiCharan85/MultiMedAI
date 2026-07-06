@@ -2,6 +2,7 @@ const $ = s => document.querySelector(s);
 const chat = $("#chat");
 let attachFiles = [];   // File[] (uploaded or grabbed-as-blob images)
 let docIds = [];        // multiple documents
+let accessGranted = false;   // request-based access to restricted images
 
 // ---------- panels / tabs ----------
 document.querySelectorAll(".nav-btn").forEach(b => b.onclick = () => {
@@ -107,6 +108,9 @@ function render(role, text, note, images, save = true) {
   });
   const pv = wrap.querySelector(".pv");
   if (pv) pv.onclick = () => openPreview(decodeURIComponent(pv.dataset.md), pv.dataset.url);
+  // access gate (arg 7 = access methods object)
+  const access = arguments[6];
+  if (access) renderAccessGate(wrap.querySelector(".bubble"), access);
   chat.scrollTop = chat.scrollHeight;
   if (save && current) {
     current.messages.push({ role, text, note, images, download: arguments[4], preview: arguments[5] });
@@ -163,6 +167,56 @@ function renderDocs() {
   $("#clrd").onclick = ev => { ev.preventDefault(); docIds = []; ds.hidden = true; };
 }
 
+// ---------- restricted-access request gate (two methods + proof) ----------
+function renderAccessGate(bubble, access) {
+  if (!bubble) return;
+  const subj = encodeURIComponent("MultiMedAI restricted-image access request");
+  const body = encodeURIComponent(
+    "Reason for access:\nRole (medical student / doctor):\nInstitution:\n" +
+    "Registration/Enrolment ID:\n(attach proof of credentials)\n");
+  const mail = `mailto:${access.email}?subject=${subj}&body=${body}`;
+  const form_link = access.form_url
+    ? `<a class="mini" href="${access.form_url}" target="_blank">🌐 External form</a>` : "";
+  const div = document.createElement("div");
+  div.className = "access";
+  div.innerHTML = `
+    <div class="access-req">Requires: ${access.required}</div>
+    <div class="access-methods">
+      <a class="mini" href="${mail}">✉️ Method 1 — Email us</a>
+      ${form_link}
+      <button class="mini afbtn">📝 Method 2 — Verify in-app</button>
+    </div>
+    <div class="access-form" hidden>
+      <input class="txt af-reason" placeholder="Clinical reason for access"/>
+      <select class="txt af-role"><option value="">Role…</option>
+        <option>Medical student</option><option>Doctor / physician</option>
+        <option>Resident</option><option>Nurse</option><option>Researcher</option></select>
+      <input class="txt af-proof" placeholder="Institution + registration/enrolment ID"/>
+      <input type="file" class="af-file"/>
+      <button class="primary af-submit">Submit request</button>
+      <div class="muted af-status"></div>
+    </div>`;
+  bubble.appendChild(div);
+  const form = div.querySelector(".access-form");
+  div.querySelector(".afbtn").onclick = () => { form.hidden = !form.hidden; };
+  div.querySelector(".af-submit").onclick = async () => {
+    const fd = new FormData();
+    fd.append("reason", div.querySelector(".af-reason").value);
+    fd.append("role", div.querySelector(".af-role").value);
+    fd.append("proof", div.querySelector(".af-proof").value);
+    const f = div.querySelector(".af-file").files[0];
+    if (f) fd.append("credential", f);
+    const st = div.querySelector(".af-status");
+    st.innerHTML = `<span class="spinner"></span> submitting…`;
+    try {
+      const r = await (await fetch("/api/request_access", { method: "POST", body: fd })).json();
+      st.textContent = r.message;
+      if (r.granted) { accessGranted = true; form.hidden = true;
+        st.textContent += " Re-run your search to view the images."; }
+    } catch (e) { st.textContent = "⚠️ " + e.message; }
+  };
+}
+
 // ---------- report preview drawer ----------
 function openPreview(md, url) {
   $("#preview-body").innerHTML = marked.parse(md || "");
@@ -189,6 +243,7 @@ async function send() {
   fd.append("scholar", $("#use-scholar")?.checked || false);
   fd.append("doc_ids", docIds.join(","));
   fd.append("history", JSON.stringify(hist));
+  fd.append("access_granted", accessGranted);
   for (const f of attachFiles) fd.append("images", f);
   const think = render("bot", "", null, null, false);
   think.querySelector(".bubble").innerHTML = `<span class="spinner"></span> thinking…`;
@@ -198,9 +253,15 @@ async function send() {
     let note = r.note || "";
     if (r.corrected && r.corrected.trim() && r.corrected.trim() !== msg.trim())
       note = `✏️ Interpreted as: “${r.corrected}”. ` + note;
-    render("bot", r.text || "(no response)", note, r.images, r.download, r.preview);
+    render("bot", r.text || "(no response)", note, r.images, r.download, r.preview, r.access);
   } catch (err) { think.remove(); render("bot", "⚠️ " + err.message); }
+  // attachments are CONSUMED by the message: clear the image chips and collapse the
+  // document standby bar so nothing lingers "on standby" above the composer. Image
+  // content is preserved in the conversation history (the server reuses it for
+  // content follow-ups like "report on the images above"); uploaded documents stay
+  // active in memory (docIds) for follow-up questions, just without the standby chip.
   clearAttach();
+  const ds = $("#doc-status"); if (ds) ds.hidden = true;
 }
 
 // ---------- settings: gemini key ----------
