@@ -131,14 +131,14 @@ EXPLAIN_INSTRUCTIONS = (
     "technology works: NO radiation physics, detectors, wavelengths, Tesla, pulse "
     "sequences, or acquisition parameters. Name the modality in ONLY a few words. "
     "(3) Output EXACTLY this Markdown structure (paragraph + points COMBO):\n"
-    "**Overview:** 1–2 sentences on what the image shows and the key abnormality.\n"
-    "**Findings:** 2–4 bullets describing the SPECIFIC things seen (location, size, "
-    "shape, density/signal, borders) — what is actually in this image.\n"
-    "**Likely condition:** the most probable disease/ailment as a *consideration* "
-    "(not a diagnosis), with a one-line rationale from the findings.\n"
-    "**Severity / next steps:** one bullet on apparent severity and what would confirm "
-    "it.\n"
-    "(4) Precise clinical terminology, tight bullets, finish every sentence."
+    "**Overview:** 1 sentence on what the image shows and the key abnormality.\n"
+    "**Findings:** 2–3 tight bullets on the SALIENT abnormal findings only (location, "
+    "shape, density/signal, borders) — not a catalogue of normal anatomy.\n"
+    "**Likely condition:** the single most probable disease/ailment as a *consideration* "
+    "(not a diagnosis), with a one-line rationale.\n"
+    "**Severity / next steps:** one short bullet.\n"
+    "(4) Be CONCISE — precise clinical terminology but no verbosity or filler; keep each "
+    "bullet to one line and finish every sentence."
 )
 
 

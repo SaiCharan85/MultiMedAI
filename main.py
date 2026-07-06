@@ -242,6 +242,13 @@ async def chat(message: str = Form(""), allow_gen: bool = Form(False),
     prev_user = next((h["text"] for h in reversed(hist)
                       if h.get("role") == "user" and h.get("text", "").strip()), "")
     ctx = " | ".join(h.get("text", "")[:120] for h in hist[-4:])
+    # RICH recent conversation (role-labelled, generously sized) so follow-ups keep
+    # context even when a short turn like "thank you" sits between the question and the
+    # analysis it refers to. This is what contextual follow-ups are grounded on.
+    def _cm(h):
+        who = "User" if h.get("role") == "user" else "Assistant"
+        return f"{who}: {h.get('text', '').strip()[:900]}"
+    convo = "\n\n".join(_cm(h) for h in hist[-6:] if h.get("text", "").strip())
     low = message.lower()
     want_detail = any(k in low for k in ("more detail", "detailed", "in depth", "in-depth",
                       "elaborate", "expand", "comprehensive", "longer", "thorough",
@@ -274,15 +281,22 @@ async def chat(message: str = Form(""), allow_gen: bool = Form(False),
     # ---- conversation-context signals shared by the follow-up branches ----
     # Does the message refer back to the previous answer? (kept specific so a fresh,
     # unrelated question doesn't get wrongly grounded in the last reply.)
-    refers_prev = any(k in low for k in ("above", "previously", "you mentioned",
-                      "you said", "that you mentioned", "the above", "that report",
-                      "this report", "from the report", "from the above", "aforementioned",
-                      "you analyzed", "you analysed", "the previous", "earlier answer",
-                      "these images", "those images", "the analysis")) \
+    refers_prev = any(k in low for k in (
+        "above", "previously", "you mentioned", "you said", "that you mentioned",
+        "the above", "that report", "this report", "from the report", "from the above",
+        "aforementioned", "you analyzed", "you analysed", "the previous", "earlier answer",
+        # references to the previously-discussed image(s) / scan(s)
+        "these images", "those images", "the images", "the image", "both images",
+        "image 1", "image 2", "image one", "image two", "first image", "second image",
+        "1st image", "2nd image", "the first image", "the second image", "the analysis",
+        "the scan", "the scans", "the mri", "the x-ray", "the xray", "the ct",
+        "the radiograph", "the report")) \
         or (" report" in low and any(w in low for w in ("above", "previous", "that", "this")))
-    prev_bot = next((h.get("text", "") for h in reversed(hist)
-                     if h.get("role") in ("bot", "assistant")
-                     and len(h.get("text", "")) > 60), "")
+    # the most SUBSTANTIAL recent assistant turn (the analysis/report is long; a
+    # "you're welcome" is short) — robust to short turns sitting in between.
+    _bots = [h.get("text", "") for h in hist[-8:]
+             if h.get("role") in ("bot", "assistant") and len(h.get("text", "")) > 60]
+    prev_bot = max(_bots, key=len) if _bots else ""
     # REGENERATE the previous answer as a structured report/summary. This is an EXPLICIT
     # "summarize / make a report of the above" — NOT a plain question about the previous
     # answer (that is answered contextually in the ask branch). Must not fall through to
@@ -489,12 +503,12 @@ async def chat(message: str = Form(""), allow_gen: bool = Form(False),
         # MULTIPLE images -> analyze together, per-image modality/finding summary
         if len(actives) > 1:
             qm = ((message or "Analyze these medical images.") +
-                  " For EACH image: describe the ANATOMY and abnormal FINDINGS actually "
-                  "visible (location, size, shape, density/signal, borders) and the most "
-                  "likely disease/ailment as a consideration. Name the modality in only a "
-                  "few words. Do NOT explain imaging physics (no radiation, detectors, "
-                  "wavelengths, Tesla, pulse sequences). Markdown, per-image headers. "
-                  "Respond in ENGLISH ONLY.")
+                  " For EACH image be CONCISE: a short modality line, then 2-3 bullets on "
+                  "the SALIENT abnormal findings actually visible and the single most likely "
+                  "disease/ailment as a consideration. Use precise medical terminology but "
+                  "do NOT over-describe normal anatomy or list every structure, and do NOT "
+                  "explain imaging physics (no radiation, detectors, Tesla, pulse sequences). "
+                  "Keep it tight — no filler. Markdown, per-image headers. English only.")
             if cloudllm.available():
                 try:
                     body = cloudllm.vision_multi(actives, qm)
@@ -609,15 +623,16 @@ async def chat(message: str = Form(""), allow_gen: bool = Form(False),
     # appearing in a question ("...from the above report") does NOT trigger a PDF.
     is_report_ask = engine.is_report_request(message)
     detailed = want_detail or is_report_ask
-    # CONTEXTUAL FOLLOW-UP: the user refers to the previous answer ("elaborate on the
-    # risk factors you mentioned above", "throw more light on X from the report"). Ground
-    # the answer in the PREVIOUS answer + recent context so we stay on-topic, instead of
-    # a fresh KB search that can drift to unrelated passages.
-    if refers_prev and prev_bot:
-        gctx = prev_bot[:3000] + (("\n\nRecent conversation: " + ctx) if ctx else "")
+    # CONTEXTUAL FOLLOW-UP: the user refers to the previous answer/image ("throw some
+    # light on image 2", "elaborate on the risk factors you mentioned above"). Ground the
+    # answer in the RICH recent conversation (which still contains the earlier analysis
+    # even if a "thank you" sits in between) so we stay on-topic — NOT a fresh KB search
+    # that can drift (that is what produced the unrelated "pneumothorax" reply before).
+    if refers_prev and (convo or prev_bot):
+        gctx = convo or prev_bot[:3000]
         resp["text"] = (llm.answer_detailed(cfg, message, None, gctx) if detailed
                         else llm.answer_question(cfg, message, context=gctx))
-        resp["note"] = "Contextual follow-up — grounded in the previous answer (same topic)."
+        resp["note"] = "Contextual follow-up — grounded in the conversation (same topic)."
         return resp
     from src import docstore
     kb = docstore.search_kb(resolved, k=5, min_score=0.30)
